@@ -3,7 +3,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   BookOpen, Plus, Search, Filter, Grid, List, Clock, 
   TrendingUp, Star, Archive, Trash2, Download, Share2,
-  Calendar, User, Tag, BarChart3, AlertCircle, Wifi, WifiOff
+  Calendar, User, Tag, BarChart3, AlertCircle, Wifi, WifiOff,
+  RefreshCw, ExternalLink
 } from 'lucide-react';
 import { Button } from './ui/Button';
 import { Input } from './ui/Input';
@@ -16,13 +17,14 @@ interface ProjectDashboardProps {
 }
 
 export default function ProjectDashboard({ onCreateNew, onSelectProject }: ProjectDashboardProps) {
-  const { getAllProjects, deleteProject, isLoading, isConnected, llmProvider } = useNovelWriter();
+  const { getAllProjects, deleteProject, isLoading, isConnected, llmProvider, checkConnection } = useNovelWriter();
   const [projects, setProjects] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [sortBy, setSortBy] = useState('modified');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [isRetrying, setIsRetrying] = useState(false);
 
   useEffect(() => {
     loadProjects();
@@ -35,7 +37,9 @@ export default function ProjectDashboard({ onCreateNew, onSelectProject }: Proje
       setProjects(allProjects);
     } catch (err) {
       console.error('Failed to load projects:', err);
-      setLoadError(err instanceof Error ? err.message : 'Failed to load projects');
+      const errorMessage = err instanceof Error ? err.message : 'Failed to load projects';
+      setLoadError(errorMessage);
+      
       // Still try to load from local storage as fallback
       try {
         const localProjects = JSON.parse(localStorage.getItem('ex3-novel-projects') || '[]');
@@ -44,6 +48,23 @@ export default function ProjectDashboard({ onCreateNew, onSelectProject }: Proje
         setProjects([]);
       }
     }
+  };
+
+  const handleRetryConnection = async () => {
+    setIsRetrying(true);
+    try {
+      await checkConnection();
+      await loadProjects();
+    } catch (err) {
+      console.error('Retry failed:', err);
+    } finally {
+      setIsRetrying(false);
+    }
+  };
+
+  const openBackendURL = () => {
+    const backendURL = import.meta.env.VITE_API_URL || 'https://localhost:8000';
+    window.open(backendURL, '_blank');
   };
 
   const filteredProjects = projects
@@ -82,6 +103,119 @@ export default function ProjectDashboard({ onCreateNew, onSelectProject }: Proje
         console.error('Failed to delete project:', err);
       }
     }
+  };
+
+  const renderConnectionError = () => {
+    if (!loadError) return null;
+
+    const isSSLError = loadError.includes('Failed to fetch') || loadError.includes('SSL') || loadError.includes('certificate');
+    const isTimeoutError = loadError.includes('timeout') || loadError.includes('AbortError');
+    const isConnectionError = loadError.includes('Backend connection failed');
+
+    return (
+      <div className="mb-6 p-6 bg-red-50 border border-red-200 rounded-lg">
+        <div className="flex items-start space-x-3">
+          <AlertCircle className="h-6 w-6 text-red-600 mt-0.5 flex-shrink-0" />
+          <div className="flex-1">
+            <h3 className="text-sm font-medium text-red-800 mb-2">Backend Connection Issue</h3>
+            
+            {isSSLError && (
+              <div className="space-y-3">
+                <p className="text-sm text-red-700">
+                  The backend server is using HTTPS with a self-signed certificate that your browser doesn't trust.
+                </p>
+                <div className="bg-red-100 p-3 rounded border border-red-200">
+                  <p className="text-sm font-medium text-red-800 mb-2">To fix this:</p>
+                  <ol className="text-sm text-red-700 space-y-1 list-decimal list-inside">
+                    <li>Click the button below to open the backend URL in a new tab</li>
+                    <li>Accept the security warning and proceed to the site</li>
+                    <li>Return to this page and click "Retry Connection"</li>
+                  </ol>
+                </div>
+                <div className="flex space-x-3">
+                  <Button 
+                    onClick={openBackendURL}
+                    variant="outline"
+                    size="sm"
+                    className="border-red-300 text-red-700 hover:bg-red-100"
+                  >
+                    <ExternalLink className="h-4 w-4 mr-2" />
+                    Open Backend URL
+                  </Button>
+                  <Button 
+                    onClick={handleRetryConnection}
+                    disabled={isRetrying}
+                    size="sm"
+                    className="bg-red-600 hover:bg-red-700"
+                  >
+                    {isRetrying ? (
+                      <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <RefreshCw className="h-4 w-4 mr-2" />
+                    )}
+                    Retry Connection
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {isTimeoutError && (
+              <div className="space-y-3">
+                <p className="text-sm text-red-700">
+                  The connection to the backend server timed out. The server may be overloaded or unreachable.
+                </p>
+                <Button 
+                  onClick={handleRetryConnection}
+                  disabled={isRetrying}
+                  size="sm"
+                  className="bg-red-600 hover:bg-red-700"
+                >
+                  {isRetrying ? (
+                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                  )}
+                  Retry Connection
+                </Button>
+              </div>
+            )}
+
+            {isConnectionError && !isSSLError && !isTimeoutError && (
+              <div className="space-y-3">
+                <p className="text-sm text-red-700">
+                  Unable to connect to the backend server. Please ensure the server is running.
+                </p>
+                <div className="text-xs text-red-600 bg-red-100 p-2 rounded">
+                  <p className="font-medium mb-1">Troubleshooting steps:</p>
+                  <ul className="list-disc list-inside space-y-1">
+                    <li>Check if the backend server is running on the configured port</li>
+                    <li>Verify the VITE_API_URL environment variable is correct</li>
+                    <li>Ensure no firewall is blocking the connection</li>
+                  </ul>
+                </div>
+                <Button 
+                  onClick={handleRetryConnection}
+                  disabled={isRetrying}
+                  size="sm"
+                  className="bg-red-600 hover:bg-red-700"
+                >
+                  {isRetrying ? (
+                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                  )}
+                  Retry Connection
+                </Button>
+              </div>
+            )}
+
+            <p className="text-xs text-red-600 mt-3">
+              Running in offline mode using local storage. Some features may be limited.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -123,22 +257,7 @@ export default function ProjectDashboard({ onCreateNew, onSelectProject }: Proje
         </div>
 
         {/* Error Alert */}
-        {loadError && (
-          <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-lg">
-            <div className="flex items-start space-x-3">
-              <AlertCircle className="h-5 w-5 text-amber-600 mt-0.5" />
-              <div>
-                <h3 className="text-sm font-medium text-amber-800">Connection Issue</h3>
-                <p className="text-sm text-amber-700 mt-1">
-                  Unable to connect to the backend server. Running in offline mode using local storage.
-                </p>
-                <p className="text-xs text-amber-600 mt-1">
-                  To use full features, ensure the backend server is running at the configured URL.
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
+        {renderConnectionError()}
 
         {/* Search and Filters */}
         <div className="flex flex-col md:flex-row gap-4 mb-6">

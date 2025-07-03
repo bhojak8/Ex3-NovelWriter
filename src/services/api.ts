@@ -2,23 +2,28 @@
 export interface NovelProject {
   id: string;
   title: string;
-  description: string;
+  description?: string;
   genre: string;
-  targetLength: number;
-  currentLength: number;
+  premise: string;
+  outline: string[];
   chapters: Chapter[];
-  characters: Character[];
-  createdAt: Date;
-  updatedAt: Date;
+  status: string;
+  progress: number;
+  writingStyle: string;
+  targetLength: string;
+  themes?: string;
+  createdAt: string;
+  modifiedAt: string;
+  wordCount: number;
 }
 
 export interface WritingSession {
   id: string;
   projectId: string;
-  startTime: Date;
-  endTime?: Date;
-  wordsWritten: number;
-  chaptersCompleted: string[];
+  currentChapter: number;
+  isActive: boolean;
+  generatedContent: string;
+  entityDatabase: any;
 }
 
 export interface ModelInfo {
@@ -40,12 +45,12 @@ export interface ModelConfig {
 }
 
 export interface Chapter {
-  id: string;
+  id: number;
   title: string;
   content: string;
+  summary: string;
+  entities: any;
   wordCount: number;
-  order: number;
-  isCompleted: boolean;
 }
 
 export interface Character {
@@ -59,62 +64,132 @@ export interface Character {
 class APIService {
   private baseURL: string;
   private fallbackURLs: string[];
+  private connectionTested: boolean = false;
+  private workingURL: string | null = null;
 
   constructor() {
-    // Use the environment variable for API URL, defaulting to HTTP
-    this.baseURL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+    // Use the environment variable for API URL, with HTTP fallback
+    this.baseURL = import.meta.env.VITE_API_URL || 'https://localhost:8000';
     this.fallbackURLs = [
       this.baseURL,
+      'https://localhost:8000',
       'http://localhost:8000',
+      'https://127.0.0.1:8000',
       'http://127.0.0.1:8000'
     ];
   }
 
-  private async fetchWithFallback(endpoint: string, options: RequestInit = {}): Promise<Response> {
-    const urls = [this.baseURL, ...this.fallbackURLs];
-    
-    for (const url of urls) {
-      try {
-        const response = await fetch(`${url}${endpoint}`, {
-          ...options,
-          headers: {
-            'Content-Type': 'application/json',
-            ...options.headers,
-          },
-        });
-        return response;
-      } catch (error) {
-        console.warn(`Failed to connect to ${url}:`, error);
-        if (url === urls[urls.length - 1]) {
-          throw new Error('Backend connection failed:\n\n' + (error as Error).message);
-        }
+  private async testConnection(url: string): Promise<boolean> {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+      
+      const response = await fetch(`${url}/health`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        signal: controller.signal,
+        // Add these options to handle SSL issues
+        mode: 'cors',
+        credentials: 'omit'
+      });
+      
+      clearTimeout(timeoutId);
+      return response.ok;
+    } catch (error) {
+      console.warn(`Connection test failed for ${url}:`, error);
+      return false;
+    }
+  }
+
+  private async findWorkingURL(): Promise<string> {
+    if (this.workingURL && this.connectionTested) {
+      return this.workingURL;
+    }
+
+    // Test all URLs to find a working one
+    for (const url of this.fallbackURLs) {
+      console.log(`Testing connection to: ${url}`);
+      if (await this.testConnection(url)) {
+        console.log(`✓ Successfully connected to: ${url}`);
+        this.workingURL = url;
+        this.connectionTested = true;
+        return url;
       }
     }
-    throw new Error('All connection attempts failed');
+
+    // If no URL works, throw a descriptive error
+    throw new Error(
+      'Backend connection failed. Please ensure:\n\n' +
+      '1. The backend server is running\n' +
+      '2. If using HTTPS, visit https://localhost:8000 in your browser and accept the SSL certificate\n' +
+      '3. Check that the server is accessible on the configured port\n\n' +
+      `Attempted URLs: ${this.fallbackURLs.join(', ')}`
+    );
+  }
+
+  private async fetchWithFallback(endpoint: string, options: RequestInit = {}): Promise<Response> {
+    const workingURL = await this.findWorkingURL();
+    
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+      
+      const response = await fetch(`${workingURL}${endpoint}`, {
+        ...options,
+        headers: {
+          'Content-Type': 'application/json',
+          ...options.headers,
+        },
+        signal: controller.signal,
+        mode: 'cors',
+        credentials: 'omit'
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
+      return response;
+    } catch (error) {
+      // Reset connection status on error
+      this.connectionTested = false;
+      this.workingURL = null;
+      
+      if (error instanceof Error) {
+        if (error.name === 'AbortError') {
+          throw new Error('Request timeout - the server may be overloaded or unreachable');
+        }
+        throw new Error(`Backend request failed: ${error.message}`);
+      }
+      throw error;
+    }
   }
 
   async checkHealth(): Promise<boolean> {
     try {
-      const response = await this.fetchWithFallback('/health');
-      return response.ok;
+      await this.findWorkingURL();
+      return true;
     } catch (error) {
-      throw new Error('Health check failed:\n\n' + `Unable to connect to backend server at ${this.baseURL}. Please ensure the server is running.`);
+      console.error('Health check failed:', error);
+      return false;
     }
   }
 
   async getAllProjects(): Promise<NovelProject[]> {
     try {
       const response = await this.fetchWithFallback('/api/projects');
-      
-      if (!response.ok) {
-        throw new Error(`Failed to fetch projects: ${response.statusText}`);
-      }
-
       const projects = await response.json();
+      
       return projects.map((project: any) => ({
         ...project,
-        createdAt: new Date(project.createdAt),
-        updatedAt: new Date(project.updatedAt)
+        chapters: project.chapters || [],
+        outline: project.outline || [],
+        wordCount: project.wordCount || 0,
+        progress: project.progress || 0
       }));
     } catch (error) {
       console.error('Failed to fetch projects:', error);
@@ -129,15 +204,13 @@ class APIService {
         body: JSON.stringify(projectData),
       });
 
-      if (!response.ok) {
-        throw new Error(`Failed to create project: ${response.statusText}`);
-      }
-
       const project = await response.json();
       return {
         ...project,
-        createdAt: new Date(project.createdAt),
-        updatedAt: new Date(project.updatedAt)
+        chapters: project.chapters || [],
+        outline: project.outline || [],
+        wordCount: project.wordCount || 0,
+        progress: project.progress || 0
       };
     } catch (error) {
       console.error('Failed to create project:', error);
@@ -145,83 +218,141 @@ class APIService {
     }
   }
 
-  async generatePremise(prompt: string, options: any = {}): Promise<string> {
+  async updateProject(projectId: string, updates: Partial<NovelProject>): Promise<NovelProject> {
+    try {
+      const response = await this.fetchWithFallback(`/api/projects/${projectId}`, {
+        method: 'PATCH',
+        body: JSON.stringify(updates),
+      });
+
+      const project = await response.json();
+      return {
+        ...project,
+        chapters: project.chapters || [],
+        outline: project.outline || [],
+        wordCount: project.wordCount || 0,
+        progress: project.progress || 0
+      };
+    } catch (error) {
+      console.error('Failed to update project:', error);
+      throw error;
+    }
+  }
+
+  async deleteProject(projectId: string): Promise<void> {
+    try {
+      await this.fetchWithFallback(`/api/projects/${projectId}`, {
+        method: 'DELETE',
+      });
+    } catch (error) {
+      console.error('Failed to delete project:', error);
+      throw error;
+    }
+  }
+
+  async generatePremise(genre: string, themes?: string, modelName?: string): Promise<{ title: string; premise: string }> {
     try {
       const response = await this.fetchWithFallback('/api/generate/premise', {
         method: 'POST',
-        body: JSON.stringify({ prompt, ...options }),
+        body: JSON.stringify({ 
+          genre, 
+          themes,
+          model_name: modelName || 'gpt-3.5-turbo'
+        }),
       });
 
-      if (!response.ok) {
-        throw new Error(`Premise generation failed: ${response.statusText}`);
-      }
-
       const data = await response.json();
-      return data.premise || data.response || '';
+      return {
+        title: data.title || `A ${genre} Tale`,
+        premise: data.premise || data.response || ''
+      };
     } catch (error) {
       console.error('Failed to generate premise:', error);
       throw error;
     }
   }
 
-  async generateOutline(projectData: Partial<NovelProject>, options: any = {}): Promise<string> {
+  async generateOutline(premise: string, genre: string, modelName?: string): Promise<string[]> {
     try {
       const response = await this.fetchWithFallback('/api/generate/outline', {
         method: 'POST',
-        body: JSON.stringify({ project: projectData, ...options }),
+        body: JSON.stringify({ 
+          premise, 
+          genre,
+          model_name: modelName || 'gpt-3.5-turbo'
+        }),
       });
 
-      if (!response.ok) {
-        throw new Error(`Outline generation failed: ${response.statusText}`);
-      }
-
       const data = await response.json();
-      return data.outline || data.response || '';
+      return Array.isArray(data) ? data : [data.outline || data.response || ''];
     } catch (error) {
       console.error('Failed to generate outline:', error);
       throw error;
     }
   }
 
-  async generateNovel(prompt: string, options: any = {}): Promise<any> {
-    const response = await this.fetchWithFallback('/generate', {
-      method: 'POST',
-      body: JSON.stringify({ prompt, ...options }),
-    });
+  async startWritingSession(projectId: string): Promise<WritingSession> {
+    try {
+      const response = await this.fetchWithFallback('/api/writing/start', {
+        method: 'POST',
+        body: JSON.stringify({ projectId }),
+      });
 
-    if (!response.ok) {
-      throw new Error(`Generation failed: ${response.statusText}`);
+      return await response.json();
+    } catch (error) {
+      console.error('Failed to start writing session:', error);
+      throw error;
     }
-
-    return response.json();
   }
 
-  async getAvailableModels(): Promise<any[]> {
-    const response = await this.fetchWithFallback('/models');
-    
-    if (!response.ok) {
-      throw new Error(`Failed to fetch models: ${response.statusText}`);
+  async generateChapterContent(
+    projectId: string, 
+    chapterIndex: number, 
+    previousContext?: string,
+    modelName?: string
+  ): Promise<{ content: string; entities: any }> {
+    try {
+      const response = await this.fetchWithFallback('/api/writing/generate-chapter', {
+        method: 'POST',
+        body: JSON.stringify({ 
+          projectId, 
+          chapterIndex, 
+          previousContext,
+          model_name: modelName || 'gpt-3.5-turbo'
+        }),
+      });
+
+      return await response.json();
+    } catch (error) {
+      console.error('Failed to generate chapter content:', error);
+      throw error;
     }
-
-    return response.json();
   }
 
-  async getModels(): Promise<any[]> {
-    return this.getAvailableModels();
+  async exportNovel(projectId: string, format: string = 'txt'): Promise<{ content: string; filename: string }> {
+    try {
+      const response = await this.fetchWithFallback(`/api/export/${projectId}?format=${format}`);
+      return await response.json();
+    } catch (error) {
+      console.error('Failed to export novel:', error);
+      throw error;
+    }
   }
 
-  async testConnection(config: any): Promise<boolean> {
-    const response = await this.fetchWithFallback('/test-connection', {
-      method: 'POST',
-      body: JSON.stringify(config),
-    });
-
-    return response.ok;
+  async getAvailableModels(): Promise<ModelInfo[]> {
+    try {
+      const response = await this.fetchWithFallback('/api/models');
+      return await response.json();
+    } catch (error) {
+      console.error('Failed to fetch models:', error);
+      return [];
+    }
   }
 }
 
 class LocalLLMService {
   private baseURL: string;
+  private connectionTested: boolean = false;
 
   constructor() {
     this.baseURL = import.meta.env.VITE_LOCAL_LLM_URL || 'http://localhost:11434';
@@ -229,16 +360,28 @@ class LocalLLMService {
 
   async checkHealth(): Promise<boolean> {
     try {
-      const response = await fetch(`${this.baseURL}/api/tags`);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      
+      const response = await fetch(`${this.baseURL}/api/tags`, {
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      this.connectionTested = response.ok;
       return response.ok;
     } catch (error) {
       console.warn('Local LLM health check failed:', error);
+      this.connectionTested = false;
       return false;
     }
   }
 
   async generateText(prompt: string, model: string = 'llama2', options: Partial<ModelConfig> = {}): Promise<string> {
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout for generation
+      
       const response = await fetch(`${this.baseURL}/api/generate`, {
         method: 'POST',
         headers: {
@@ -254,7 +397,10 @@ class LocalLLMService {
             num_predict: options.maxTokens || 1000,
           },
         }),
+        signal: controller.signal
       });
+
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
         throw new Error(`Local LLM generation failed: ${response.statusText}`);
@@ -263,63 +409,83 @@ class LocalLLMService {
       const data = await response.json();
       return data.response || '';
     } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new Error('Local LLM request timeout - the model may be too large or the system overloaded');
+      }
       console.error('Local LLM generation error:', error);
       throw error;
     }
   }
 
-  async generateOutline(project: Partial<NovelProject>, model: string = 'llama2'): Promise<string> {
-    const prompt = `Create a detailed outline for a ${project.genre} novel titled "${project.title}".
+  async generateOutline(premise: string, genre: string, model: string = 'llama2'): Promise<string[]> {
+    const prompt = `Create a detailed chapter outline for a ${genre} novel with the following premise:
 
-Description: ${project.description}
+${premise}
 
-Target length: ${project.targetLength} words
+Generate 8-12 chapter summaries, each 1-2 sentences long. Format as a numbered list:
 
-Please provide a structured outline with:
-1. Main plot points
-2. Character arcs
-3. Chapter breakdown
-4. Key themes
+1. Chapter title - Brief description
+2. Chapter title - Brief description
+...
 
-Outline:`;
+Focus on story progression, character development, and maintaining reader engagement.`;
 
-    return this.generateText(prompt, model);
+    const response = await this.generateText(prompt, model, { maxTokens: 2048 });
+    
+    // Parse the response into an array
+    const lines = response.split('\n');
+    const chapters = [];
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed && (trimmed[0]?.match(/\d/) || trimmed.startsWith('-'))) {
+        // Remove numbering and clean up
+        const chapter = trimmed.split('.', 1)[1]?.trim() || trimmed.replace(/^\d+\.?\s*/, '').replace(/^-\s*/, '');
+        if (chapter) {
+          chapters.push(chapter);
+        }
+      }
+    }
+    
+    return chapters.length > 0 ? chapters : [response];
   }
 
   async generateChapterContent(
-    chapterTitle: string,
-    outline: string,
-    previousChapters: string,
-    characters: Character[],
+    chapterSummary: string,
+    previousContext: string,
+    genre: string,
+    writingStyle: string,
     model: string = 'llama2'
   ): Promise<string> {
-    const characterInfo = characters.map(c => `${c.name}: ${c.description}`).join('\n');
+    const styleText = writingStyle === "一" ? "first person (我)" : "third person (他/她)";
     
-    const prompt = `Write a chapter titled "${chapterTitle}" for a novel.
+    const prompt = `${previousContext ? `Previous context: ${previousContext}\n\n` : ''}Write a detailed chapter for a ${genre} novel in ${styleText} perspective.
 
-Outline context:
-${outline}
+Chapter summary: ${chapterSummary}
 
-Previous chapters summary:
-${previousChapters}
+Requirements:
+- Write 1000-1500 words
+- Use proper paragraphs with dialogue and narrative description
+- Focus on character development and atmosphere
+- Advance the plot meaningfully
+- Include sensory details and emotional depth
+- Maintain consistent tone and style
 
-Characters:
-${characterInfo}
+Begin writing the chapter:`;
 
-Write an engaging chapter that advances the plot and develops the characters. Focus on:
-- Compelling dialogue
-- Vivid descriptions
-- Character development
-- Plot progression
-
-Chapter content:`;
-
-    return this.generateText(prompt, model, { maxTokens: 2000 });
+    return this.generateText(prompt, model, { maxTokens: 2048 });
   }
 
   async getAvailableModels(): Promise<ModelInfo[]> {
     try {
-      const response = await fetch(`${this.baseURL}/api/tags`);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      
+      const response = await fetch(`${this.baseURL}/api/tags`, {
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      
       if (!response.ok) {
         throw new Error('Failed to fetch models');
       }
