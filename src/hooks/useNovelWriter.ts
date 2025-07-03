@@ -10,6 +10,7 @@ export function useNovelWriter() {
   const [error, setError] = useState<string | null>(null);
   const [llmProvider, setLLMProvider] = useState<LLMProvider>('ex3-api');
   const [isConnected, setIsConnected] = useState(false);
+  const [isLocalLLMConnected, setIsLocalLLMConnected] = useState(false);
 
   // Local storage for projects when using local LLM
   const [localProjects, setLocalProjects] = useState<NovelProject[]>(() => {
@@ -33,6 +34,28 @@ export function useNovelWriter() {
       return false;
     }
   }, []);
+
+  // Check Local LLM connectivity
+  const checkLocalLLMConnection = useCallback(async () => {
+    try {
+      const connected = await localLLMService.checkHealth();
+      setIsLocalLLMConnected(connected);
+      return connected;
+    } catch {
+      setIsLocalLLMConnected(false);
+      return false;
+    }
+  }, []);
+
+  // Enhanced provider setter with connection checks
+  const setLLMProviderWithCheck = useCallback(async (provider: LLMProvider) => {
+    setLLMProvider(provider);
+    if (provider === 'ex3-api') {
+      await checkConnection();
+    } else if (provider === 'local-llm') {
+      await checkLocalLLMConnection();
+    }
+  }, [checkConnection, checkLocalLLMConnection]);
 
   const getAllProjects = useCallback(async () => {
     if (llmProvider === 'local-llm') {
@@ -149,7 +172,7 @@ export function useNovelWriter() {
     try {
       if (llmProvider === 'ex3-api' && isConnected) {
         return await apiService.generatePremise(genre, themes);
-      } else {
+      } else if (llmProvider === 'local-llm' && isLocalLLMConnected) {
         const prompt = `Generate a compelling premise for a ${genre} novel${themes ? ` incorporating themes of ${themes}` : ''}. Include both a title and a detailed premise.`;
         const response = await localLLMService.generateText(prompt);
         
@@ -162,6 +185,12 @@ export function useNovelWriter() {
           title: titleLine ? titleLine.replace(/title:?\s*/i, '').trim() : `A ${genre} Tale`,
           premise: premiseLine ? premiseLine.replace(/premise:?\s*/i, '').trim() : response
         };
+      } else {
+        throw new Error(
+          llmProvider === 'ex3-api' 
+            ? 'Ex3 API is not connected. Please check your connection.'
+            : 'Local LLM is not available. Please ensure Ollama is running.'
+        );
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to generate premise';
@@ -170,7 +199,7 @@ export function useNovelWriter() {
     } finally {
       setIsLoading(false);
     }
-  }, [llmProvider, isConnected]);
+  }, [llmProvider, isConnected, isLocalLLMConnected]);
 
   const generateOutline = useCallback(async (premise: string, genre: string) => {
     setIsLoading(true);
@@ -180,8 +209,14 @@ export function useNovelWriter() {
       
       if (llmProvider === 'ex3-api' && isConnected) {
         outline = await apiService.generateOutline(premise, genre);
-      } else {
+      } else if (llmProvider === 'local-llm' && isLocalLLMConnected) {
         outline = await localLLMService.generateOutline(premise, genre);
+      } else {
+        throw new Error(
+          llmProvider === 'ex3-api' 
+            ? 'Ex3 API is not connected. Please check your connection.'
+            : 'Local LLM is not available. Please ensure Ollama is running.'
+        );
       }
       
       if (currentProject) {
@@ -197,7 +232,7 @@ export function useNovelWriter() {
     } finally {
       setIsLoading(false);
     }
-  }, [currentProject, llmProvider, isConnected, updateProject]);
+  }, [currentProject, llmProvider, isConnected, isLocalLLMConnected, updateProject]);
 
   const startWriting = useCallback(async () => {
     if (!currentProject) return;
@@ -242,7 +277,7 @@ export function useNovelWriter() {
       
       if (llmProvider === 'ex3-api' && isConnected) {
         result = await apiService.generateChapterContent(currentProject.id, chapterIndex);
-      } else {
+      } else if (llmProvider === 'local-llm' && isLocalLLMConnected) {
         // Generate using local LLM
         const chapterSummary = currentProject.outline[chapterIndex];
         const previousContext = chapterIndex > 0 ? 
@@ -263,6 +298,12 @@ export function useNovelWriter() {
           content,
           entities: { characters, locations }
         };
+      } else {
+        throw new Error(
+          llmProvider === 'ex3-api' 
+            ? 'Ex3 API is not connected. Please check your connection.'
+            : 'Local LLM is not available. Please ensure Ollama is running.'
+        );
       }
       
       // Update project with new chapter content
@@ -295,7 +336,7 @@ export function useNovelWriter() {
     } finally {
       setIsLoading(false);
     }
-  }, [currentProject, writingSession, llmProvider, isConnected, updateProject]);
+  }, [currentProject, writingSession, llmProvider, isConnected, isLocalLLMConnected, updateProject]);
 
   const exportNovel = useCallback(async (format: 'txt' | 'docx' | 'pdf' = 'txt') => {
     if (!currentProject) return;
@@ -334,8 +375,10 @@ export function useNovelWriter() {
     error,
     llmProvider,
     isConnected,
-    setLLMProvider,
+    isLocalLLMConnected,
+    setLLMProvider: setLLMProviderWithCheck,
     checkConnection,
+    checkLocalLLMConnection,
     getAllProjects,
     createProject,
     updateProject,

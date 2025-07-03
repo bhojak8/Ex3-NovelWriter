@@ -167,7 +167,19 @@ class Ex3ApiService {
 
 // Enhanced local LLM service with better error handling
 class LocalLLMService {
-  private baseUrl = import.meta.env.VITE_LOCAL_LLM_URL || 'http://localhost:11434'; // Ollama default
+  public baseUrl = import.meta.env.VITE_LOCAL_LLM_URL || 'http://localhost:11434'; // Ollama default
+
+  async checkHealth(): Promise<boolean> {
+    try {
+      const response = await fetch(`${this.baseUrl}/api/tags`, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      return response.ok;
+    } catch {
+      return false;
+    }
+  }
 
   async generateText(prompt: string, model: string = 'llama2'): Promise<string> {
     try {

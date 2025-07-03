@@ -36,8 +36,10 @@ export default function NovelCreator({ onCreateProject, existingProject }: Novel
     error, 
     llmProvider, 
     isConnected, 
+    isLocalLLMConnected,
     setLLMProvider, 
     checkConnection,
+    checkLocalLLMConnection,
     generatePremise,
     createProject 
   } = useNovelWriter();
@@ -57,7 +59,8 @@ export default function NovelCreator({ onCreateProject, existingProject }: Novel
 
   useEffect(() => {
     checkConnection();
-  }, [checkConnection]);
+    checkLocalLLMConnection();
+  }, [checkConnection, checkLocalLLMConnection]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -89,8 +92,13 @@ export default function NovelCreator({ onCreateProject, existingProject }: Novel
 
   const handleProviderChange = (provider: LLMProvider) => {
     setLLMProvider(provider);
-    if (provider === 'ex3-api') {
+  };
+
+  const handleTestConnection = () => {
+    if (llmProvider === 'ex3-api') {
       checkConnection();
+    } else {
+      checkLocalLLMConnection();
     }
   };
 
@@ -106,6 +114,15 @@ export default function NovelCreator({ onCreateProject, existingProject }: Novel
     if (customTheme.trim() && !selectedThemes.includes(customTheme)) {
       setSelectedThemes(prev => [...prev, customTheme]);
       setCustomTheme('');
+    }
+  };
+
+  // Check if generation is available
+  const isGenerationAvailable = () => {
+    if (llmProvider === 'ex3-api') {
+      return isConnected;
+    } else {
+      return isLocalLLMConnected;
     }
   };
 
@@ -144,10 +161,17 @@ export default function NovelCreator({ onCreateProject, existingProject }: Novel
                     </>
                   )
                 ) : (
-                  <>
-                    <Brain className="h-4 w-4 text-yellow-300" />
-                    <span className="text-sm">Local LLM Mode</span>
-                  </>
+                  isLocalLLMConnected ? (
+                    <>
+                      <Wifi className="h-4 w-4 text-green-300" />
+                      <span className="text-sm">Local LLM Connected</span>
+                    </>
+                  ) : (
+                    <>
+                      <WifiOff className="h-4 w-4 text-red-300" />
+                      <span className="text-sm">Local LLM Offline</span>
+                    </>
+                  )
                 )}
               </div>
               
@@ -208,20 +232,26 @@ export default function NovelCreator({ onCreateProject, existingProject }: Novel
                       </>
                     )
                   ) : (
-                    <>
-                      <div className="w-2 h-2 bg-yellow-500 rounded-full"></div>
-                      <span className="text-sm text-yellow-700">Local Mode</span>
-                    </>
+                    isLocalLLMConnected ? (
+                      <>
+                        <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                        <span className="text-sm text-green-700">Connected</span>
+                      </>
+                    ) : (
+                      <>
+                        <div className="w-2 h-2 bg-red-500 rounded-full"></div>
+                        <span className="text-sm text-red-700">Disconnected</span>
+                      </>
+                    )
                   )}
                 </div>
               </div>
               
               <div className="flex items-end">
                 <Button
-                  onClick={checkConnection}
+                  onClick={handleTestConnection}
                   variant="outline"
                   size="sm"
-                  disabled={llmProvider !== 'ex3-api'}
                   className="w-full"
                 >
                   Test Connection
@@ -295,13 +325,21 @@ export default function NovelCreator({ onCreateProject, existingProject }: Novel
                 variant="outline"
                 size="sm"
                 onClick={handleGeneratePremise}
-                disabled={isLoading}
+                disabled={isLoading || !isGenerationAvailable()}
                 className="text-xs"
               >
                 <Wand2 className="h-3 w-3 mr-1" />
                 {isLoading ? 'Generating...' : 'AI Generate Premise'}
               </Button>
             </div>
+            
+            {!isGenerationAvailable() && (
+              <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                <p className="text-sm text-amber-800">
+                  AI generation is not available. Please check your {llmProvider === 'ex3-api' ? 'Ex3 API' : 'Local LLM'} connection.
+                </p>
+              </div>
+            )}
             
             <Textarea
               value={formData.premise}
