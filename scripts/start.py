@@ -37,19 +37,57 @@ def check_dependencies():
     
     return True
 
+def generate_ssl_cert():
+    """Generate self-signed SSL certificate if it doesn't exist"""
+    backend_dir = Path(__file__).parent.parent / "backend"
+    cert_file = backend_dir / "cert.pem"
+    key_file = backend_dir / "key.pem"
+    
+    if cert_file.exists() and key_file.exists():
+        print("✓ SSL certificates found")
+        return str(key_file), str(cert_file)
+    
+    print("🔐 Generating SSL certificates...")
+    try:
+        # Generate self-signed certificate
+        subprocess.run([
+            "openssl", "req", "-x509", "-newkey", "rsa:4096", 
+            "-keyout", str(key_file), "-out", str(cert_file),
+            "-days", "365", "-nodes", "-subj", 
+            "/C=US/ST=State/L=City/O=Organization/CN=localhost"
+        ], cwd=backend_dir, check=True, capture_output=True)
+        
+        print("✓ SSL certificates generated")
+        return str(key_file), str(cert_file)
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        print("⚠️  OpenSSL not found, starting without SSL")
+        return None, None
+
 def start_backend():
     """Start the backend server"""
     backend_dir = Path(__file__).parent.parent / "backend"
     
     print("🔧 Starting backend server...")
     
-    # Use Python directly to avoid shell command issues
-    backend_process = subprocess.Popen([
+    # Try to generate SSL certificates
+    key_file, cert_file = generate_ssl_cert()
+    
+    # Build uvicorn command
+    cmd = [
         sys.executable, "-m", "uvicorn", "app:app",
         "--host", "0.0.0.0",
         "--port", "8000",
         "--reload"
-    ], cwd=backend_dir)
+    ]
+    
+    # Add SSL if certificates are available
+    if key_file and cert_file:
+        cmd.extend(["--ssl-keyfile", key_file, "--ssl-certfile", cert_file])
+        print("🔐 Starting with HTTPS support")
+    else:
+        print("⚠️  Starting with HTTP only (SSL certificates not available)")
+    
+    backend_process = subprocess.Popen(cmd, cwd=backend_dir)
     
     return backend_process
 
@@ -87,8 +125,10 @@ def main():
         
         print("\n✅ Application started successfully!")
         print("📱 Frontend: http://localhost:5173")
-        print("🔧 Backend: http://localhost:8000")
-        print("📚 API Docs: http://localhost:8000/docs")
+        print("🔧 Backend: https://localhost:8000 (or http://localhost:8000 if SSL unavailable)")
+        print("📚 API Docs: https://localhost:8000/docs")
+        print("\n⚠️  If using HTTPS, you may need to accept the self-signed certificate")
+        print("   Visit https://localhost:8000 in your browser and click 'Advanced' -> 'Proceed to localhost'")
         print("\nPress Ctrl+C to stop all servers")
         
         # Wait for processes

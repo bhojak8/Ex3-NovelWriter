@@ -8,10 +8,6 @@ import os
 # Add the project root to Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from Expanding.novel_writer import Novel_Writer
-from src.model_do import load_model
-import torch
-
 # Import the new model management system
 from models.model_manager import model_manager
 from api_routes import router as models_router
@@ -30,27 +26,8 @@ app.add_middleware(
 # Include the models API router
 app.include_router(models_router)
 
-# Global model instances (load once at startup)
-writer_model = None
-writer_tokenizer = None
-base_model = None
-base_tokenizer = None
-
 @app.on_event("startup")
-async def load_models():
-    global writer_model, writer_tokenizer, base_model, base_tokenizer
-    
-    # Load models (update paths as needed)
-    writer_path = "/path/to/finetuned/NovelWriter"
-    base_path = "/path/to/general/LLM"
-    
-    try:
-        writer_model, writer_tokenizer = load_model(writer_path, device='cuda:0')
-        base_model, base_tokenizer = load_model(base_path, device='cuda:1')
-        print("Models loaded successfully!")
-    except Exception as e:
-        print(f"Error loading models: {e}")
-    
+async def startup_event():
     # Initialize the model manager with default models
     model_manager.load_default_models()
 
@@ -191,30 +168,7 @@ Focus on story progression, character development, and maintaining reader engage
         return chapters if chapters else [response.text]
         
     except Exception as e:
-        # Fallback to original method if model manager fails
-        if not writer_model or not writer_tokenizer:
-            raise HTTPException(status_code=503, detail="Models not loaded")
-        
-        try:
-            # Create a temporary Novel_Writer instance
-            novel_writer = Novel_Writer(
-                writer_model=writer_model,
-                writer_tokenizer=writer_tokenizer,
-                base_model=base_model,
-                base_tokenzier=base_tokenizer,
-                novel_tag=request.genre,
-                novel_title=None,
-                novel_intro=request.premise,
-                level_num=1,
-                output_dir="./temp"
-            )
-            
-            # Generate outline using the summary_expand method
-            outline = novel_writer.summary_expand(request.premise)
-            return outline
-            
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error generating outline: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error generating outline: {str(e)}")
 
 @app.post("/api/generate/premise")
 async def generate_premise(request: PremiseRequest):
@@ -259,31 +213,7 @@ The premise should be engaging and give a clear sense of the story's direction."
         }
         
     except Exception as e:
-        # Fallback to original method
-        if not writer_model or not writer_tokenizer:
-            raise HTTPException(status_code=503, detail="Models not loaded")
-        
-        try:
-            # Create a temporary Novel_Writer instance for premise generation
-            novel_writer = Novel_Writer(
-                writer_model=writer_model,
-                writer_tokenizer=writer_tokenizer,
-                base_model=base_model,
-                base_tokenzier=base_tokenizer,
-                novel_tag=request.genre,
-                novel_title=None,
-                novel_intro=None,
-                level_num=1,
-                output_dir="./temp"
-            )
-            
-            # Generate title and premise
-            title, premise = novel_writer.novel_init(request.genre, tmp=0.9)
-            
-            return {"premise": premise, "title": title}
-            
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error generating premise: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error generating premise: {str(e)}")
 
 @app.post("/api/writing/start")
 async def start_writing_session(request: WritingRequest):
@@ -314,7 +244,7 @@ async def generate_chapter_content(request: ChapterRequest):
     project = projects_db[project_id]
     
     try:
-        # Use the new model manager system first
+        # Use the new model manager system
         from models.base import GenerationRequest
         
         if request.chapterIndex < len(project["outline"]):
@@ -380,61 +310,7 @@ Begin writing the chapter:"""
             raise HTTPException(status_code=400, detail="Chapter index out of range")
             
     except Exception as e:
-        # Fallback to original method
-        if not writer_model or not writer_tokenizer:
-            raise HTTPException(status_code=503, detail="Models not loaded")
-        
-        try:
-            # Create Novel_Writer instance with project data
-            novel_writer = Novel_Writer(
-                writer_model=writer_model,
-                writer_tokenizer=writer_tokenizer,
-                base_model=base_model,
-                base_tokenzier=base_tokenizer,
-                novel_tag=project["genre"],
-                novel_title=project["title"],
-                novel_intro=project["premise"],
-                level_num=1,
-                output_dir="./temp"
-            )
-            
-            # Initialize the writer state
-            novel_writer.pre_summary_chapter = '无'
-            novel_writer.pre_summary_para = '无'
-            novel_writer.recent_visit = []
-            novel_writer.entity_db = {}
-            novel_writer.novel = []
-            
-            # Get chapter summary from outline
-            if request.chapterIndex < len(project["outline"]):
-                chapter_summary = project["outline"][request.chapterIndex]
-                
-                # Generate chapter content
-                is_first = request.chapterIndex == 0
-                is_last = request.chapterIndex == len(project["outline"]) - 1
-                
-                novel_writer.chapter_writer(
-                    chapter_summary, 
-                    start_flag=is_first, 
-                    end_flag=is_last
-                )
-                
-                # Extract generated content
-                content = "\n".join(novel_writer.novel)
-                entities = {
-                    "characters": list(novel_writer.entity_db.keys())[:10],  # Limit for demo
-                    "locations": []
-                }
-                
-                return {
-                    "content": content,
-                    "entities": entities
-                }
-            else:
-                raise HTTPException(status_code=400, detail="Chapter index out of range")
-                
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error generating chapter: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error generating chapter: {str(e)}")
 
 @app.get("/api/export/{project_id}")
 async def export_novel(project_id: str, format: str = "txt"):
@@ -456,4 +332,4 @@ async def export_novel(project_id: str, format: str = "txt"):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000, ssl_keyfile="key.pem", ssl_certfile="cert.pem")
+    uvicorn.run(app, host="0.0.0.0", port=8000)
