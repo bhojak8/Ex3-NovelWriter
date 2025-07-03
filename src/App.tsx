@@ -5,40 +5,15 @@ import NovelCreator from './components/NovelCreator';
 import StoryOutline from './components/StoryOutline';
 import WritingProgress from './components/WritingProgress';
 import { Button } from './components/ui/Button';
-
-interface NovelProject {
-  id: string;
-  title: string;
-  genre: string;
-  premise: string;
-  outline: string[];
-  chapters: Array<{
-    title: string;
-    content: string;
-    summary: string;
-  }>;
-  status: 'planning' | 'writing' | 'completed';
-  progress: number;
-}
+import { useNovelWriter } from './hooks/useNovelWriter';
 
 function App() {
-  const [currentProject, setCurrentProject] = useState<NovelProject | null>(null);
+  const { currentProject, setCurrentProject } = useNovelWriter();
   const [isWriting, setIsWriting] = useState(false);
   const [activeTab, setActiveTab] = useState<'create' | 'outline' | 'write'>('create');
 
-  const handleCreateProject = (projectData: Partial<NovelProject>) => {
-    const newProject: NovelProject = {
-      id: Date.now().toString(),
-      title: projectData.title || 'Untitled Novel',
-      genre: projectData.genre || 'Fantasy',
-      premise: projectData.premise || '',
-      outline: [],
-      chapters: [],
-      status: 'planning',
-      progress: 0,
-      ...projectData
-    };
-    setCurrentProject(newProject);
+  const handleCreateProject = (projectData: any) => {
+    setCurrentProject(projectData);
     setActiveTab('outline');
   };
 

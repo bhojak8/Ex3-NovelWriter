@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Sparkles, BookOpen, Wand2 } from 'lucide-react';
+import { Sparkles, BookOpen, Wand2, Wifi, WifiOff, Settings } from 'lucide-react';
 import { Button } from './ui/Button';
 import { Input } from './ui/Input';
 import { Textarea } from './ui/Textarea';
 import { Select } from './ui/Select';
+import { useNovelWriter, LLMProvider } from '../hooks/useNovelWriter';
 
 interface NovelCreatorProps {
   onCreateProject: (project: any) => void;
@@ -23,6 +24,17 @@ const WRITING_STYLES = [
 ];
 
 export default function NovelCreator({ onCreateProject, existingProject }: NovelCreatorProps) {
+  const { 
+    isLoading, 
+    error, 
+    llmProvider, 
+    isConnected, 
+    setLLMProvider, 
+    checkConnection,
+    generatePremise,
+    createProject 
+  } = useNovelWriter();
+
   const [formData, setFormData] = useState({
     title: existingProject?.title || '',
     genre: existingProject?.genre || 'Fantasy',
@@ -32,36 +44,40 @@ export default function NovelCreator({ onCreateProject, existingProject }: Novel
     themes: existingProject?.themes || ''
   });
 
-  const [isGenerating, setIsGenerating] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+
+  useEffect(() => {
+    checkConnection();
+  }, [checkConnection]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsGenerating(true);
-    
-    // Simulate API call delay
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
-    onCreateProject(formData);
-    setIsGenerating(false);
+    try {
+      const project = await createProject(formData);
+      onCreateProject(project);
+    } catch (err) {
+      console.error('Failed to create project:', err);
+    }
   };
 
-  const generatePremise = async () => {
-    setIsGenerating(true);
-    // Simulate AI premise generation
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    
-    const samplePremises = {
-      'Fantasy': 'In a world where magic is forbidden, a young librarian discovers an ancient tome that awakens dormant powers within her, forcing her to choose between safety and saving her realm from an approaching darkness.',
-      'Science Fiction': 'When humanity\'s first interstellar colony ship arrives at its destination, the crew discovers the planet is already inhabited by their own descendants from a future timeline.',
-      'Mystery': 'A detective investigating a series of impossible murders realizes that each victim had recently visited the same antique shop, where time itself seems to flow differently.',
-      'Romance': 'Two rival food truck owners are forced to work together when they\'re both selected for a prestigious culinary competition, discovering that their heated arguments might actually be sparks of attraction.'
-    };
-    
-    setFormData(prev => ({
-      ...prev,
-      premise: samplePremises[formData.genre as keyof typeof samplePremises] || 'A compelling story waiting to be told...'
-    }));
-    setIsGenerating(false);
+  const handleGeneratePremise = async () => {
+    try {
+      const result = await generatePremise(formData.genre, formData.themes);
+      setFormData(prev => ({
+        ...prev,
+        title: result.title,
+        premise: result.premise
+      }));
+    } catch (err) {
+      console.error('Failed to generate premise:', err);
+    }
+  };
+
+  const handleProviderChange = (provider: LLMProvider) => {
+    setLLMProvider(provider);
+    if (provider === 'ex3-api') {
+      checkConnection();
+    }
   };
 
   return (
@@ -72,14 +88,102 @@ export default function NovelCreator({ onCreateProject, existingProject }: Novel
         className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden"
       >
         <div className="bg-gradient-to-r from-blue-600 to-purple-600 px-8 py-6">
-          <div className="flex items-center space-x-3">
-            <Sparkles className="h-8 w-8 text-white" />
-            <div>
-              <h2 className="text-2xl font-bold text-white">Create Your Novel</h2>
-              <p className="text-blue-100">Set up your story parameters and let AI help you craft an amazing novel</p>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <Sparkles className="h-8 w-8 text-white" />
+              <div>
+                <h2 className="text-2xl font-bold text-white">Create Your Novel</h2>
+                <p className="text-blue-100">Set up your story parameters and let AI help you craft an amazing novel</p>
+              </div>
+            </div>
+            
+            <div className="flex items-center space-x-3">
+              {/* Connection Status */}
+              <div className="flex items-center space-x-2 text-white">
+                {llmProvider === 'ex3-api' ? (
+                  isConnected ? (
+                    <>
+                      <Wifi className="h-4 w-4 text-green-300" />
+                      <span className="text-sm">Ex3 API Connected</span>
+                    </>
+                  ) : (
+                    <>
+                      <WifiOff className="h-4 w-4 text-red-300" />
+                      <span className="text-sm">Ex3 API Offline</span>
+                    </>
+                  )
+                ) : (
+                  <>
+                    <Sparkles className="h-4 w-4 text-yellow-300" />
+                    <span className="text-sm">Local LLM Mode</span>
+                  </>
+                )}
+              </div>
+              
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowSettings(!showSettings)}
+                className="text-white border-white hover:bg-white hover:text-blue-600"
+              >
+                <Settings className="h-4 w-4" />
+              </Button>
             </div>
           </div>
         </div>
+
+        {/* Settings Panel */}
+        {showSettings && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="border-b border-slate-200 p-6 bg-slate-50"
+          >
+            <h3 className="text-lg font-semibold text-slate-900 mb-4">LLM Provider Settings</h3>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  AI Provider
+                </label>
+                <Select
+                  value={llmProvider}
+                  onValueChange={(value) => handleProviderChange(value as LLMProvider)}
+                >
+                  <option value="ex3-api">Ex3 API (Recommended)</option>
+                  <option value="local-llm">Local LLM (Ollama)</option>
+                </Select>
+              </div>
+              
+              <div className="flex items-end">
+                <Button
+                  onClick={checkConnection}
+                  variant="outline"
+                  size="sm"
+                  disabled={llmProvider !== 'ex3-api'}
+                >
+                  Test Connection
+                </Button>
+              </div>
+            </div>
+            
+            {llmProvider === 'local-llm' && (
+              <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                <p className="text-sm text-yellow-800">
+                  <strong>Local LLM Mode:</strong> Make sure you have Ollama running on localhost:11434 
+                  with a compatible model (e.g., llama2, mistral) installed.
+                </p>
+              </div>
+            )}
+            
+            {error && (
+              <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+                <p className="text-sm text-red-800">{error}</p>
+              </div>
+            )}
+          </motion.div>
+        )}
 
         <form onSubmit={handleSubmit} className="p-8 space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -119,12 +223,12 @@ export default function NovelCreator({ onCreateProject, existingProject }: Novel
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={generatePremise}
-                disabled={isGenerating}
+                onClick={handleGeneratePremise}
+                disabled={isLoading}
                 className="text-xs"
               >
                 <Wand2 className="h-3 w-3 mr-1" />
-                Generate AI Premise
+                {isLoading ? 'Generating...' : 'Generate AI Premise'}
               </Button>
             </div>
             <Textarea
@@ -180,10 +284,10 @@ export default function NovelCreator({ onCreateProject, existingProject }: Novel
           <div className="flex justify-end space-x-4 pt-6 border-t border-slate-200">
             <Button
               type="submit"
-              disabled={isGenerating}
+              disabled={isLoading}
               className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
             >
-              {isGenerating ? (
+              {isLoading ? (
                 <>
                   <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
                   Creating Project...
