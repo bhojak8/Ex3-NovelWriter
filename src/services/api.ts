@@ -61,12 +61,12 @@ class APIService {
   private fallbackURLs: string[];
 
   constructor() {
-    // Use the environment variable for API URL, defaulting to HTTPS
-    this.baseURL = import.meta.env.VITE_API_URL || 'https://localhost:8000';
+    // Use the environment variable for API URL, defaulting to HTTP
+    this.baseURL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
     this.fallbackURLs = [
       this.baseURL,
-      'https://localhost:8000',
-      'https://127.0.0.1:8000'
+      'http://localhost:8000',
+      'http://127.0.0.1:8000'
     ];
   }
 
