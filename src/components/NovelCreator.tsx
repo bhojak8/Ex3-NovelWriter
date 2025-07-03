@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Sparkles, BookOpen, Wand2, Wifi, WifiOff, Settings, Zap, Brain, Target } from 'lucide-react';
+import { Sparkles, BookOpen, Wand2, Wifi, WifiOff, Settings, Zap, Brain, Target, Cpu } from 'lucide-react';
 import { Button } from './ui/Button';
 import { Input } from './ui/Input';
 import { Textarea } from './ui/Textarea';
 import { Select } from './ui/Select';
 import { useNovelWriter, LLMProvider } from '../hooks/useNovelWriter';
+import ModelManager from './ModelManager';
 
 interface NovelCreatorProps {
   onCreateProject: (project: any) => void;
@@ -54,6 +55,8 @@ export default function NovelCreator({ onCreateProject, existingProject }: Novel
   });
 
   const [showSettings, setShowSettings] = useState(false);
+  const [showModelManager, setShowModelManager] = useState(false);
+  const [selectedModel, setSelectedModel] = useState('gpt-3.5-turbo');
   const [selectedThemes, setSelectedThemes] = useState<string[]>([]);
   const [customTheme, setCustomTheme] = useState('');
 
@@ -178,6 +181,16 @@ export default function NovelCreator({ onCreateProject, existingProject }: Novel
               <Button
                 variant="outline"
                 size="sm"
+                onClick={() => setShowModelManager(true)}
+                className="text-white border-white hover:bg-white hover:text-blue-600"
+              >
+                <Cpu className="h-4 w-4 mr-2" />
+                Models
+              </Button>
+              
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={() => setShowSettings(!showSettings)}
                 className="text-white border-white hover:bg-white hover:text-blue-600"
               >
@@ -216,34 +229,17 @@ export default function NovelCreator({ onCreateProject, existingProject }: Novel
               
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-2">
-                  Connection Status
+                  Selected Model
                 </label>
                 <div className="flex items-center space-x-2 p-2 bg-white rounded-lg border">
-                  {llmProvider === 'ex3-api' ? (
-                    isConnected ? (
-                      <>
-                        <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                        <span className="text-sm text-green-700">Connected</span>
-                      </>
-                    ) : (
-                      <>
-                        <div className="w-2 h-2 bg-red-500 rounded-full"></div>
-                        <span className="text-sm text-red-700">Disconnected</span>
-                      </>
-                    )
-                  ) : (
-                    isLocalLLMConnected ? (
-                      <>
-                        <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                        <span className="text-sm text-green-700">Connected</span>
-                      </>
-                    ) : (
-                      <>
-                        <div className="w-2 h-2 bg-red-500 rounded-full"></div>
-                        <span className="text-sm text-red-700">Disconnected</span>
-                      </>
-                    )
-                  )}
+                  <span className="text-sm text-slate-700">{selectedModel}</span>
+                  <Button
+                    onClick={() => setShowModelManager(true)}
+                    size="sm"
+                    variant="outline"
+                  >
+                    Change
+                  </Button>
                 </div>
               </div>
               
@@ -336,7 +332,7 @@ export default function NovelCreator({ onCreateProject, existingProject }: Novel
             {!isGenerationAvailable() && (
               <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
                 <p className="text-sm text-amber-800">
-                  AI generation is not available. Please check your {llmProvider === 'ex3-api' ? 'Ex3 API' : 'Local LLM'} connection.
+                  AI generation is not available. Please check your {llmProvider === 'ex3-api' ? 'Ex3 API' : 'Local LLM'} connection or manage models.
                 </p>
               </div>
             )}
@@ -476,6 +472,16 @@ export default function NovelCreator({ onCreateProject, existingProject }: Novel
           </div>
         </form>
       </motion.div>
+
+      {/* Model Manager Modal */}
+      <ModelManager
+        isOpen={showModelManager}
+        onClose={() => setShowModelManager(false)}
+        onModelSelect={(modelName) => {
+          setSelectedModel(modelName);
+          setShowModelManager(false);
+        }}
+      />
     </div>
   );
 }
