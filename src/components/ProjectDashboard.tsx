@@ -1,0 +1,367 @@
+import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { 
+  BookOpen, Plus, Search, Filter, Grid, List, Clock, 
+  TrendingUp, Star, Archive, Trash2, Download, Share2,
+  Calendar, User, Tag, BarChart3
+} from 'lucide-react';
+import { Button } from './ui/Button';
+import { Input } from './ui/Input';
+import { Select } from './ui/Select';
+import { useNovelWriter } from '../hooks/useNovelWriter';
+
+interface ProjectDashboardProps {
+  onCreateNew: () => void;
+  onSelectProject: (project: any) => void;
+}
+
+export default function ProjectDashboard({ onCreateNew, onSelectProject }: ProjectDashboardProps) {
+  const { getAllProjects, deleteProject, isLoading } = useNovelWriter();
+  const [projects, setProjects] = useState([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [sortBy, setSortBy] = useState('modified');
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+
+  useEffect(() => {
+    loadProjects();
+  }, []);
+
+  const loadProjects = async () => {
+    try {
+      const allProjects = await getAllProjects();
+      setProjects(allProjects);
+    } catch (err) {
+      console.error('Failed to load projects:', err);
+    }
+  };
+
+  const filteredProjects = projects
+    .filter(project => {
+      const matchesSearch = project.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                           project.genre.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesStatus = filterStatus === 'all' || project.status === filterStatus;
+      return matchesSearch && matchesStatus;
+    })
+    .sort((a, b) => {
+      switch (sortBy) {
+        case 'title': return a.title.localeCompare(b.title);
+        case 'progress': return b.progress - a.progress;
+        case 'created': return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        default: return new Date(b.modifiedAt).getTime() - new Date(a.modifiedAt).getTime();
+      }
+    });
+
+  const getStatusColor = (status: string) => {
+    const colors = {
+      planning: 'bg-yellow-100 text-yellow-800',
+      writing: 'bg-blue-100 text-blue-800',
+      completed: 'bg-green-100 text-green-800',
+      paused: 'bg-gray-100 text-gray-800'
+    };
+    return colors[status as keyof typeof colors] || colors.planning;
+  };
+
+  const handleDeleteProject = async (projectId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (window.confirm('Are you sure you want to delete this project?')) {
+      try {
+        await deleteProject(projectId);
+        setProjects(projects.filter(p => p.id !== projectId));
+      } catch (err) {
+        console.error('Failed to delete project:', err);
+      }
+    }
+  };
+
+  return (
+    <div className="max-w-7xl mx-auto space-y-8">
+      {/* Header */}
+      <div className="bg-white rounded-2xl shadow-xl border border-slate-200 p-8">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-3xl font-bold text-slate-900">Novel Projects</h1>
+            <p className="text-slate-600 mt-1">Manage and create your AI-powered novels</p>
+          </div>
+          <Button onClick={onCreateNew} className="bg-gradient-to-r from-blue-600 to-purple-600">
+            <Plus className="h-4 w-4 mr-2" />
+            New Project
+          </Button>
+        </div>
+
+        {/* Search and Filters */}
+        <div className="flex flex-col md:flex-row gap-4 mb-6">
+          <div className="flex-1 relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
+            <Input
+              placeholder="Search projects..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-10"
+            />
+          </div>
+          
+          <div className="flex gap-3">
+            <Select value={filterStatus} onValueChange={setFilterStatus}>
+              <option value="all">All Status</option>
+              <option value="planning">Planning</option>
+              <option value="writing">Writing</option>
+              <option value="completed">Completed</option>
+              <option value="paused">Paused</option>
+            </Select>
+            
+            <Select value={sortBy} onValueChange={setSortBy}>
+              <option value="modified">Last Modified</option>
+              <option value="created">Date Created</option>
+              <option value="title">Title</option>
+              <option value="progress">Progress</option>
+            </Select>
+            
+            <div className="flex bg-slate-100 rounded-lg p-1">
+              <button
+                onClick={() => setViewMode('grid')}
+                className={`p-2 rounded-md ${viewMode === 'grid' ? 'bg-white shadow-sm' : ''}`}
+              >
+                <Grid className="h-4 w-4" />
+              </button>
+              <button
+                onClick={() => setViewMode('list')}
+                className={`p-2 rounded-md ${viewMode === 'list' ? 'bg-white shadow-sm' : ''}`}
+              >
+                <List className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Stats Overview */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="bg-blue-50 rounded-lg p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-blue-600 text-sm font-medium">Total Projects</p>
+                <p className="text-2xl font-bold text-blue-900">{projects.length}</p>
+              </div>
+              <BookOpen className="h-8 w-8 text-blue-600" />
+            </div>
+          </div>
+          
+          <div className="bg-green-50 rounded-lg p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-green-600 text-sm font-medium">Completed</p>
+                <p className="text-2xl font-bold text-green-900">
+                  {projects.filter(p => p.status === 'completed').length}
+                </p>
+              </div>
+              <Star className="h-8 w-8 text-green-600" />
+            </div>
+          </div>
+          
+          <div className="bg-yellow-50 rounded-lg p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-yellow-600 text-sm font-medium">In Progress</p>
+                <p className="text-2xl font-bold text-yellow-900">
+                  {projects.filter(p => p.status === 'writing').length}
+                </p>
+              </div>
+              <TrendingUp className="h-8 w-8 text-yellow-600" />
+            </div>
+          </div>
+          
+          <div className="bg-purple-50 rounded-lg p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-purple-600 text-sm font-medium">Total Words</p>
+                <p className="text-2xl font-bold text-purple-900">
+                  {projects.reduce((total, p) => total + (p.wordCount || 0), 0).toLocaleString()}
+                </p>
+              </div>
+              <BarChart3 className="h-8 w-8 text-purple-600" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Projects Grid/List */}
+      <div className="bg-white rounded-2xl shadow-xl border border-slate-200 p-8">
+        {filteredProjects.length === 0 ? (
+          <div className="text-center py-16">
+            <BookOpen className="h-16 w-16 mx-auto mb-4 text-slate-300" />
+            <h3 className="text-lg font-medium text-slate-900 mb-2">
+              {projects.length === 0 ? 'No projects yet' : 'No projects match your filters'}
+            </h3>
+            <p className="text-slate-600 mb-6">
+              {projects.length === 0 
+                ? 'Create your first AI-powered novel project'
+                : 'Try adjusting your search or filter criteria'
+              }
+            </p>
+            {projects.length === 0 && (
+              <Button onClick={onCreateNew}>
+                <Plus className="h-4 w-4 mr-2" />
+                Create First Project
+              </Button>
+            )}
+          </div>
+        ) : (
+          <div className={viewMode === 'grid' 
+            ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6'
+            : 'space-y-4'
+          }>
+            <AnimatePresence>
+              {filteredProjects.map((project, index) => (
+                <ProjectCard
+                  key={project.id}
+                  project={project}
+                  viewMode={viewMode}
+                  index={index}
+                  onSelect={() => onSelectProject(project)}
+                  onDelete={(e) => handleDeleteProject(project.id, e)}
+                />
+              ))}
+            </AnimatePresence>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ProjectCard({ 
+  project, 
+  viewMode, 
+  index, 
+  onSelect, 
+  onDelete 
+}: {
+  project: any;
+  viewMode: 'grid' | 'list';
+  index: number;
+  onSelect: () => void;
+  onDelete: (e: React.MouseEvent) => void;
+}) {
+  const getStatusColor = (status: string) => {
+    const colors = {
+      planning: 'bg-yellow-100 text-yellow-800',
+      writing: 'bg-blue-100 text-blue-800',
+      completed: 'bg-green-100 text-green-800',
+      paused: 'bg-gray-100 text-gray-800'
+    };
+    return colors[status as keyof typeof colors] || colors.planning;
+  };
+
+  if (viewMode === 'list') {
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: index * 0.05 }}
+        onClick={onSelect}
+        className="border border-slate-200 rounded-lg p-4 hover:border-slate-300 cursor-pointer transition-colors"
+      >
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-4 flex-1">
+            <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
+              <BookOpen className="h-6 w-6 text-white" />
+            </div>
+            
+            <div className="flex-1">
+              <div className="flex items-center space-x-2 mb-1">
+                <h3 className="font-semibold text-slate-900">{project.title}</h3>
+                <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(project.status)}`}>
+                  {project.status}
+                </span>
+              </div>
+              <p className="text-sm text-slate-600">{project.genre} • {project.chapters?.length || 0} chapters</p>
+            </div>
+          </div>
+          
+          <div className="flex items-center space-x-4">
+            <div className="text-right">
+              <p className="text-sm font-medium text-slate-900">{Math.round(project.progress || 0)}%</p>
+              <div className="w-20 bg-slate-200 rounded-full h-2">
+                <div 
+                  className="bg-blue-600 h-2 rounded-full transition-all"
+                  style={{ width: `${project.progress || 0}%` }}
+                />
+              </div>
+            </div>
+            
+            <div className="flex space-x-1">
+              <Button variant="ghost" size="sm">
+                <Download className="h-4 w-4" />
+              </Button>
+              <Button variant="ghost" size="sm" onClick={onDelete}>
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        </div>
+      </motion.div>
+    );
+  }
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: index * 0.1 }}
+      onClick={onSelect}
+      className="border border-slate-200 rounded-lg p-6 hover:border-slate-300 cursor-pointer transition-all hover:shadow-lg"
+    >
+      <div className="flex items-start justify-between mb-4">
+        <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
+          <BookOpen className="h-6 w-6 text-white" />
+        </div>
+        
+        <div className="flex space-x-1">
+          <Button variant="ghost" size="sm">
+            <Share2 className="h-3 w-3" />
+          </Button>
+          <Button variant="ghost" size="sm" onClick={onDelete}>
+            <Trash2 className="h-3 w-3" />
+          </Button>
+        </div>
+      </div>
+      
+      <div className="mb-4">
+        <div className="flex items-center space-x-2 mb-2">
+          <h3 className="font-semibold text-slate-900 line-clamp-1">{project.title}</h3>
+          <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(project.status)}`}>
+            {project.status}
+          </span>
+        </div>
+        <p className="text-sm text-slate-600 mb-2">{project.genre}</p>
+        <p className="text-xs text-slate-500 line-clamp-2">{project.premise}</p>
+      </div>
+      
+      <div className="space-y-3">
+        <div className="flex justify-between text-sm">
+          <span className="text-slate-600">Progress</span>
+          <span className="font-medium">{Math.round(project.progress || 0)}%</span>
+        </div>
+        <div className="w-full bg-slate-200 rounded-full h-2">
+          <motion.div 
+            initial={{ width: 0 }}
+            animate={{ width: `${project.progress || 0}%` }}
+            transition={{ duration: 1, delay: index * 0.1 }}
+            className="bg-gradient-to-r from-blue-500 to-purple-600 h-2 rounded-full"
+          />
+        </div>
+        
+        <div className="flex items-center justify-between text-xs text-slate-500">
+          <div className="flex items-center space-x-1">
+            <Calendar className="h-3 w-3" />
+            <span>{new Date(project.modifiedAt || Date.now()).toLocaleDateString()}</span>
+          </div>
+          <div className="flex items-center space-x-1">
+            <User className="h-3 w-3" />
+            <span>{project.chapters?.length || 0} chapters</span>
+          </div>
+        </div>
+      </div>
+    </motion.div>
+  );
+}

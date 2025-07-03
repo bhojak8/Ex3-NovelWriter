@@ -11,6 +11,17 @@ export function useNovelWriter() {
   const [llmProvider, setLLMProvider] = useState<LLMProvider>('ex3-api');
   const [isConnected, setIsConnected] = useState(false);
 
+  // Local storage for projects when using local LLM
+  const [localProjects, setLocalProjects] = useState<NovelProject[]>(() => {
+    const stored = localStorage.getItem('ex3-novel-projects');
+    return stored ? JSON.parse(stored) : [];
+  });
+
+  const saveToLocalStorage = useCallback((projects: NovelProject[]) => {
+    localStorage.setItem('ex3-novel-projects', JSON.stringify(projects));
+    setLocalProjects(projects);
+  }, []);
+
   // Check API connectivity
   const checkConnection = useCallback(async () => {
     try {
@@ -23,13 +34,26 @@ export function useNovelWriter() {
     }
   }, []);
 
+  const getAllProjects = useCallback(async () => {
+    if (llmProvider === 'local-llm') {
+      return localProjects;
+    }
+    
+    try {
+      return await apiService.getAllProjects();
+    } catch (err) {
+      console.error('Failed to get projects:', err);
+      return localProjects; // Fallback to local
+    }
+  }, [llmProvider, localProjects]);
+
   const createProject = useCallback(async (projectData: Partial<NovelProject>) => {
     setIsLoading(true);
     setError(null);
     try {
       let project: NovelProject;
       
-      if (llmProvider === 'ex3-api') {
+      if (llmProvider === 'ex3-api' && isConnected) {
         project = await apiService.createProject(projectData);
       } else {
         // Create project locally
@@ -44,8 +68,14 @@ export function useNovelWriter() {
           progress: 0,
           writingStyle: projectData.writingStyle || '三',
           targetLength: projectData.targetLength || 'medium',
-          themes: projectData.themes
+          themes: projectData.themes,
+          createdAt: new Date().toISOString(),
+          modifiedAt: new Date().toISOString(),
+          wordCount: 0
         };
+        
+        const updatedProjects = [...localProjects, project];
+        saveToLocalStorage(updatedProjects);
       }
       
       setCurrentProject(project);
@@ -57,13 +87,67 @@ export function useNovelWriter() {
     } finally {
       setIsLoading(false);
     }
-  }, [llmProvider]);
+  }, [llmProvider, isConnected, localProjects, saveToLocalStorage]);
+
+  const updateProject = useCallback(async (projectId: string, updates: Partial<NovelProject>) => {
+    try {
+      let updatedProject: NovelProject;
+      
+      if (llmProvider === 'ex3-api' && isConnected) {
+        updatedProject = await apiService.updateProject(projectId, updates);
+      } else {
+        // Update locally
+        const projectIndex = localProjects.findIndex(p => p.id === projectId);
+        if (projectIndex === -1) throw new Error('Project not found');
+        
+        updatedProject = {
+          ...localProjects[projectIndex],
+          ...updates,
+          modifiedAt: new Date().toISOString()
+        };
+        
+        const updatedProjects = [...localProjects];
+        updatedProjects[projectIndex] = updatedProject;
+        saveToLocalStorage(updatedProjects);
+      }
+      
+      if (currentProject?.id === projectId) {
+        setCurrentProject(updatedProject);
+      }
+      
+      return updatedProject;
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to update project';
+      setError(errorMessage);
+      throw new Error(errorMessage);
+    }
+  }, [llmProvider, isConnected, localProjects, currentProject, saveToLocalStorage]);
+
+  const deleteProject = useCallback(async (projectId: string) => {
+    try {
+      if (llmProvider === 'ex3-api' && isConnected) {
+        await apiService.deleteProject(projectId);
+      }
+      
+      // Always remove from local storage
+      const updatedProjects = localProjects.filter(p => p.id !== projectId);
+      saveToLocalStorage(updatedProjects);
+      
+      if (currentProject?.id === projectId) {
+        setCurrentProject(null);
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to delete project';
+      setError(errorMessage);
+      throw new Error(errorMessage);
+    }
+  }, [llmProvider, isConnected, localProjects, currentProject, saveToLocalStorage]);
 
   const generatePremise = useCallback(async (genre: string, themes?: string) => {
     setIsLoading(true);
     setError(null);
     try {
-      if (llmProvider === 'ex3-api') {
+      if (llmProvider === 'ex3-api' && isConnected) {
         return await apiService.generatePremise(genre, themes);
       } else {
         const prompt = `Generate a compelling premise for a ${genre} novel${themes ? ` incorporating themes of ${themes}` : ''}. Include both a title and a detailed premise.`;
@@ -86,7 +170,7 @@ export function useNovelWriter() {
     } finally {
       setIsLoading(false);
     }
-  }, [llmProvider]);
+  }, [llmProvider, isConnected]);
 
   const generateOutline = useCallback(async (premise: string, genre: string) => {
     setIsLoading(true);
@@ -94,19 +178,15 @@ export function useNovelWriter() {
     try {
       let outline: string[];
       
-      if (llmProvider === 'ex3-api') {
+      if (llmProvider === 'ex3-api' && isConnected) {
         outline = await apiService.generateOutline(premise, genre);
       } else {
         outline = await localLLMService.generateOutline(premise, genre);
       }
       
       if (currentProject) {
-        const updatedProject = { ...currentProject, outline };
+        const updatedProject = await updateProject(currentProject.id, { outline });
         setCurrentProject(updatedProject);
-        
-        if (llmProvider === 'ex3-api') {
-          await apiService.updateProject(currentProject.id, { outline });
-        }
       }
       
       return outline;
@@ -117,7 +197,7 @@ export function useNovelWriter() {
     } finally {
       setIsLoading(false);
     }
-  }, [currentProject, llmProvider]);
+  }, [currentProject, llmProvider, isConnected, updateProject]);
 
   const startWriting = useCallback(async () => {
     if (!currentProject) return;
@@ -127,7 +207,7 @@ export function useNovelWriter() {
     try {
       let session: WritingSession;
       
-      if (llmProvider === 'ex3-api') {
+      if (llmProvider === 'ex3-api' && isConnected) {
         session = await apiService.startWritingSession(currentProject.id);
       } else {
         // Create local session
@@ -150,7 +230,7 @@ export function useNovelWriter() {
     } finally {
       setIsLoading(false);
     }
-  }, [currentProject, llmProvider]);
+  }, [currentProject, llmProvider, isConnected]);
 
   const generateChapter = useCallback(async (chapterIndex: number) => {
     if (!currentProject || !writingSession) return;
@@ -160,7 +240,7 @@ export function useNovelWriter() {
     try {
       let result: { content: string; entities: any };
       
-      if (llmProvider === 'ex3-api') {
+      if (llmProvider === 'ex3-api' && isConnected) {
         result = await apiService.generateChapterContent(currentProject.id, chapterIndex);
       } else {
         // Generate using local LLM
@@ -186,32 +266,27 @@ export function useNovelWriter() {
       }
       
       // Update project with new chapter content
-      const updatedChapters = [...currentProject.chapters];
+      const updatedChapters = [...(currentProject.chapters || [])];
       updatedChapters[chapterIndex] = {
         id: chapterIndex,
         title: `Chapter ${chapterIndex + 1}`,
         content: result.content,
         summary: currentProject.outline[chapterIndex],
-        entities: result.entities
+        entities: result.entities,
+        wordCount: result.content.split(' ').length
       };
       
-      const updatedProject = {
-        ...currentProject,
+      const totalWords = updatedChapters.reduce((sum, ch) => sum + (ch.wordCount || 0), 0);
+      const progress = ((chapterIndex + 1) / currentProject.outline.length) * 100;
+      
+      const updatedProject = await updateProject(currentProject.id, {
         chapters: updatedChapters,
-        progress: ((chapterIndex + 1) / currentProject.outline.length) * 100,
+        progress,
+        wordCount: totalWords,
         status: chapterIndex === currentProject.outline.length - 1 ? 'completed' : 'writing'
-      } as NovelProject;
+      });
       
       setCurrentProject(updatedProject);
-      
-      if (llmProvider === 'ex3-api') {
-        await apiService.updateProject(currentProject.id, {
-          chapters: updatedChapters,
-          progress: updatedProject.progress,
-          status: updatedProject.status
-        });
-      }
-      
       return result;
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to generate chapter';
@@ -220,13 +295,13 @@ export function useNovelWriter() {
     } finally {
       setIsLoading(false);
     }
-  }, [currentProject, writingSession, llmProvider]);
+  }, [currentProject, writingSession, llmProvider, isConnected, updateProject]);
 
   const exportNovel = useCallback(async (format: 'txt' | 'docx' | 'pdf' = 'txt') => {
     if (!currentProject) return;
     
     try {
-      if (llmProvider === 'ex3-api') {
+      if (llmProvider === 'ex3-api' && isConnected) {
         return await apiService.exportNovel(currentProject.id, format);
       } else {
         // Local export
@@ -250,7 +325,7 @@ export function useNovelWriter() {
       setError(errorMessage);
       throw new Error(errorMessage);
     }
-  }, [currentProject, llmProvider]);
+  }, [currentProject, llmProvider, isConnected]);
 
   return {
     currentProject,
@@ -261,7 +336,10 @@ export function useNovelWriter() {
     isConnected,
     setLLMProvider,
     checkConnection,
+    getAllProjects,
     createProject,
+    updateProject,
+    deleteProject,
     generatePremise,
     generateOutline,
     startWriting,
@@ -302,7 +380,6 @@ function extractLocations(content: string): string[] {
   
   // Common location indicators
   const locationKeywords = ['at', 'in', 'near', 'by', 'through', 'across', 'into', 'onto'];
-  const words = content.split(/\s+/);
   
   locationKeywords.forEach(keyword => {
     const regex = new RegExp(`\\b${keyword}\\s+(?:the\\s+)?([A-Z][a-z]+(?:\\s+[A-Z][a-z]+)*)`, 'g');
