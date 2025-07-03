@@ -45,6 +45,30 @@ export interface GenerationResult {
   };
 }
 
+export interface ModelInfo {
+  name: string;
+  provider: string;
+  model: string;
+  type: string;
+  supports_system_prompt: boolean;
+  supports_streaming: boolean;
+  local?: boolean;
+  cloud?: boolean;
+}
+
+export interface ModelConfig {
+  name: string;
+  provider: string;
+  model_id: string;
+  api_key?: string;
+  base_url?: string;
+  max_tokens: number;
+  temperature: number;
+  top_p: number;
+  top_k: number;
+  custom_params: Record<string, any>;
+}
+
 class Ex3ApiService {
   private baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
@@ -54,6 +78,80 @@ class Ex3ApiService {
       throw new Error(`API Error: ${response.status} - ${error}`);
     }
     return response.json();
+  }
+
+  // Model Management
+  async getAvailableModels(): Promise<ModelInfo[]> {
+    const response = await fetch(`${this.baseUrl}/api/models/`);
+    return this.handleResponse<ModelInfo[]>(response);
+  }
+
+  async addModel(config: ModelConfig): Promise<void> {
+    const response = await fetch(`${this.baseUrl}/api/models/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(config)
+    });
+    await this.handleResponse<any>(response);
+  }
+
+  async removeModel(modelName: string): Promise<void> {
+    const response = await fetch(`${this.baseUrl}/api/models/${modelName}`, {
+      method: 'DELETE'
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to remove model: ${response.status}`);
+    }
+  }
+
+  async checkModelHealth(modelName: string): Promise<boolean> {
+    try {
+      const response = await fetch(`${this.baseUrl}/api/models/${modelName}/health`);
+      const data = await this.handleResponse<{ healthy: boolean }>(response);
+      return data.healthy;
+    } catch {
+      return false;
+    }
+  }
+
+  async checkAllModelsHealth(): Promise<Record<string, boolean>> {
+    try {
+      const response = await fetch(`${this.baseUrl}/api/models/health/all`);
+      return this.handleResponse<Record<string, boolean>>(response);
+    } catch {
+      return {};
+    }
+  }
+
+  async scanLocalProviders(): Promise<Record<string, any>> {
+    try {
+      const response = await fetch(`${this.baseUrl}/api/models/providers/scan`, {
+        method: 'POST'
+      });
+      return this.handleResponse<Record<string, any>>(response);
+    } catch {
+      return {};
+    }
+  }
+
+  async generateWithModel(modelName: string, prompt: string, options: {
+    max_tokens?: number;
+    temperature?: number;
+    top_p?: number;
+    top_k?: number;
+    stop_sequences?: string[];
+    system_prompt?: string;
+  } = {}): Promise<{ text: string; usage: any; metadata: any }> {
+    const response = await fetch(`${this.baseUrl}/api/models/${modelName}/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model_name: modelName,
+        prompt,
+        ...options
+      })
+    });
+    return this.handleResponse<{ text: string; usage: any; metadata: any }>(response);
   }
 
   // Project Management
@@ -102,27 +200,27 @@ class Ex3ApiService {
     }
   }
 
-  // AI Generation - Real API calls
-  async generateOutline(premise: string, genre: string): Promise<string[]> {
+  // AI Generation - Enhanced with model selection
+  async generateOutline(premise: string, genre: string, modelName: string = 'gpt-3.5-turbo'): Promise<string[]> {
     const response = await fetch(`${this.baseUrl}/api/generate/outline`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ premise, genre })
+      body: JSON.stringify({ premise, genre, model_name: modelName })
     });
     const data = await this.handleResponse<string[]>(response);
     return Array.isArray(data) ? data : [data];
   }
 
-  async generatePremise(genre: string, themes?: string): Promise<{ premise: string; title: string }> {
+  async generatePremise(genre: string, themes?: string, modelName: string = 'gpt-3.5-turbo'): Promise<{ premise: string; title: string }> {
     const response = await fetch(`${this.baseUrl}/api/generate/premise`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ genre, themes })
+      body: JSON.stringify({ genre, themes, model_name: modelName })
     });
     return this.handleResponse<{ premise: string; title: string }>(response);
   }
 
-  // Writing Process - Real generation
+  // Writing Process - Enhanced with model selection
   async startWritingSession(projectId: string): Promise<WritingSession> {
     const response = await fetch(`${this.baseUrl}/api/writing/start`, {
       method: 'POST',
@@ -135,12 +233,13 @@ class Ex3ApiService {
   async generateChapterContent(
     projectId: string, 
     chapterIndex: number,
-    previousContext?: string
+    previousContext?: string,
+    modelName: string = 'gpt-3.5-turbo'
   ): Promise<GenerationResult> {
     const response = await fetch(`${this.baseUrl}/api/writing/generate-chapter`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectId, chapterIndex, previousContext })
+      body: JSON.stringify({ projectId, chapterIndex, previousContext, model_name: modelName })
     });
     return this.handleResponse<GenerationResult>(response);
   }
@@ -165,13 +264,35 @@ class Ex3ApiService {
   }
 }
 
-// Enhanced local LLM service with better error handling
+// Enhanced local LLM service with multiple provider support
 class LocalLLMService {
   public baseUrl = import.meta.env.VITE_LOCAL_LLM_URL || 'http://localhost:11434'; // Ollama default
+  public providers = {
+    ollama: 'http://localhost:11434',
+    llamacpp: 'http://localhost:8080',
+    textgen: 'http://localhost:5000'
+  };
 
-  async checkHealth(): Promise<boolean> {
+  async checkHealth(provider: string = 'ollama'): Promise<boolean> {
     try {
-      const response = await fetch(`${this.baseUrl}/api/tags`, {
+      const baseUrl = this.providers[provider as keyof typeof this.providers] || this.baseUrl;
+      let endpoint = '';
+      
+      switch (provider) {
+        case 'ollama':
+          endpoint = '/api/tags';
+          break;
+        case 'llamacpp':
+          endpoint = '/health';
+          break;
+        case 'textgen':
+          endpoint = '/api/v1/model';
+          break;
+        default:
+          endpoint = '/api/tags';
+      }
+      
+      const response = await fetch(`${baseUrl}${endpoint}`, {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' }
       });
@@ -181,36 +302,121 @@ class LocalLLMService {
     }
   }
 
-  async generateText(prompt: string, model: string = 'llama2'): Promise<string> {
+  async getAvailableModels(provider: string = 'ollama'): Promise<string[]> {
     try {
-      const response = await fetch(`${this.baseUrl}/api/generate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model,
-          prompt,
-          stream: false,
-          options: {
-            temperature: 0.8,
-            top_p: 0.9,
-            top_k: 40
-          }
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error(`Local LLM Error: ${response.status}`);
+      const baseUrl = this.providers[provider as keyof typeof this.providers] || this.baseUrl;
+      
+      if (provider === 'ollama') {
+        const response = await fetch(`${baseUrl}/api/tags`);
+        if (response.ok) {
+          const data = await response.json();
+          return data.models?.map((m: any) => m.name) || [];
+        }
       }
-
-      const data = await response.json();
-      return data.response;
-    } catch (error) {
-      console.error('Local LLM generation failed:', error);
-      throw new Error('Local LLM is not available. Please ensure Ollama is running.');
+      
+      return [];
+    } catch {
+      return [];
     }
   }
 
-  async generateOutline(premise: string, genre: string): Promise<string[]> {
+  async generateText(prompt: string, model: string = 'llama2', provider: string = 'ollama'): Promise<string> {
+    try {
+      const baseUrl = this.providers[provider as keyof typeof this.providers] || this.baseUrl;
+      
+      switch (provider) {
+        case 'ollama':
+          return this.generateWithOllama(baseUrl, prompt, model);
+        case 'llamacpp':
+          return this.generateWithLlamaCpp(baseUrl, prompt);
+        case 'textgen':
+          return this.generateWithTextGen(baseUrl, prompt);
+        default:
+          return this.generateWithOllama(baseUrl, prompt, model);
+      }
+    } catch (error) {
+      console.error(`${provider} generation failed:`, error);
+      throw new Error(`${provider} is not available. Please ensure it is running.`);
+    }
+  }
+
+  private async generateWithOllama(baseUrl: string, prompt: string, model: string): Promise<string> {
+    const response = await fetch(`${baseUrl}/api/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model,
+        prompt,
+        stream: false,
+        options: {
+          temperature: 0.8,
+          top_p: 0.9,
+          top_k: 40
+        }
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Ollama API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return data.response;
+  }
+
+  private async generateWithLlamaCpp(baseUrl: string, prompt: string): Promise<string> {
+    const response = await fetch(`${baseUrl}/completion`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        prompt,
+        n_predict: 2048,
+        temperature: 0.8,
+        top_p: 0.9,
+        top_k: 40,
+        stream: false
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`llama.cpp API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return data.content;
+  }
+
+  private async generateWithTextGen(baseUrl: string, prompt: string): Promise<string> {
+    const response = await fetch(`${baseUrl}/api/v1/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        prompt,
+        max_new_tokens: 2048,
+        temperature: 0.8,
+        top_p: 0.9,
+        top_k: 40,
+        do_sample: true,
+        stream: false
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`TextGen WebUI API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    let generatedText = data.results[0].text;
+    
+    // Remove the original prompt from the response
+    if (generatedText.startsWith(prompt)) {
+      generatedText = generatedText.slice(prompt.length).trim();
+    }
+    
+    return generatedText;
+  }
+
+  async generateOutline(premise: string, genre: string, model: string = 'llama2', provider: string = 'ollama'): Promise<string[]> {
     const prompt = `Create a detailed chapter outline for a ${genre} novel with the following premise:
 
 ${premise}
@@ -223,7 +429,7 @@ Generate 8-12 chapter summaries, each 1-2 sentences long. Format as a numbered l
 
 Focus on story progression, character development, and maintaining reader engagement.`;
 
-    const response = await this.generateText(prompt);
+    const response = await this.generateText(prompt, model, provider);
     
     // Parse the response into an array
     const lines = response.split('\n').filter(line => line.trim());
@@ -238,7 +444,9 @@ Focus on story progression, character development, and maintaining reader engage
     chapterSummary: string,
     previousContext: string = '',
     genre: string,
-    writingStyle: string = '三'
+    writingStyle: string = '三',
+    model: string = 'llama2',
+    provider: string = 'ollama'
   ): Promise<string> {
     const styleText = writingStyle === '一' ? 'first person (我)' : 'third person (他/她)';
     
@@ -258,44 +466,7 @@ Requirements:
 
 Begin writing the chapter:`;
 
-    return this.generateText(prompt);
-  }
-
-  async generateCharacterProfile(name: string, role: string, genre: string): Promise<string> {
-    const prompt = `Create a detailed character profile for a ${genre} novel:
-
-Character Name: ${name}
-Role: ${role}
-
-Include:
-- Physical appearance
-- Personality traits
-- Background/history
-- Motivations and goals
-- Strengths and weaknesses
-- Relationships with other characters
-- Character arc potential
-
-Write a comprehensive character profile:`;
-
-    return this.generateText(prompt);
-  }
-
-  async improvePlotPoint(currentPlot: string, genre: string): Promise<string> {
-    const prompt = `Improve and expand this plot point for a ${genre} novel:
-
-Current plot: ${currentPlot}
-
-Suggestions:
-- Add more tension and conflict
-- Develop character motivations
-- Include unexpected twists
-- Enhance emotional stakes
-- Improve pacing and flow
-
-Provide an improved version:`;
-
-    return this.generateText(prompt);
+    return this.generateText(prompt, model, provider);
   }
 }
 
