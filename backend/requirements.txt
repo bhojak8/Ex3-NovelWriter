@@ -1,0 +1,9 @@
+fastapi==0.104.1
+uvicorn==0.24.0
+pydantic==2.5.0
+python-multipart==0.0.6
+torch==2.0.1
+transformers==4.33.3
+sentence-transformers==2.2.2
+accelerate==0.21.0
+numpy==1.25.1
