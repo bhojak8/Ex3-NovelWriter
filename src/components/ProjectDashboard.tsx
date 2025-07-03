@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   BookOpen, Plus, Search, Filter, Grid, List, Clock, 
   TrendingUp, Star, Archive, Trash2, Download, Share2,
-  Calendar, User, Tag, BarChart3
+  Calendar, User, Tag, BarChart3, AlertCircle, Wifi, WifiOff
 } from 'lucide-react';
 import { Button } from './ui/Button';
 import { Input } from './ui/Input';
@@ -16,12 +16,13 @@ interface ProjectDashboardProps {
 }
 
 export default function ProjectDashboard({ onCreateNew, onSelectProject }: ProjectDashboardProps) {
-  const { getAllProjects, deleteProject, isLoading } = useNovelWriter();
+  const { getAllProjects, deleteProject, isLoading, isConnected, llmProvider } = useNovelWriter();
   const [projects, setProjects] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [sortBy, setSortBy] = useState('modified');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     loadProjects();
@@ -29,10 +30,19 @@ export default function ProjectDashboard({ onCreateNew, onSelectProject }: Proje
 
   const loadProjects = async () => {
     try {
+      setLoadError(null);
       const allProjects = await getAllProjects();
       setProjects(allProjects);
     } catch (err) {
       console.error('Failed to load projects:', err);
+      setLoadError(err instanceof Error ? err.message : 'Failed to load projects');
+      // Still try to load from local storage as fallback
+      try {
+        const localProjects = JSON.parse(localStorage.getItem('ex3-novel-projects') || '[]');
+        setProjects(localProjects);
+      } catch {
+        setProjects([]);
+      }
     }
   };
 
@@ -83,11 +93,52 @@ export default function ProjectDashboard({ onCreateNew, onSelectProject }: Proje
             <h1 className="text-3xl font-bold text-slate-900">Novel Projects</h1>
             <p className="text-slate-600 mt-1">Manage and create your AI-powered novels</p>
           </div>
-          <Button onClick={onCreateNew} className="bg-gradient-to-r from-blue-600 to-purple-600">
-            <Plus className="h-4 w-4 mr-2" />
-            New Project
-          </Button>
+          <div className="flex items-center space-x-4">
+            {/* Connection Status Indicator */}
+            <div className="flex items-center space-x-2">
+              {llmProvider === 'ex3-api' ? (
+                isConnected ? (
+                  <div className="flex items-center text-green-600">
+                    <Wifi className="h-4 w-4 mr-1" />
+                    <span className="text-sm">Connected</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center text-amber-600">
+                    <WifiOff className="h-4 w-4 mr-1" />
+                    <span className="text-sm">Offline Mode</span>
+                  </div>
+                )
+              ) : (
+                <div className="flex items-center text-blue-600">
+                  <Wifi className="h-4 w-4 mr-1" />
+                  <span className="text-sm">Local LLM</span>
+                </div>
+              )}
+            </div>
+            <Button onClick={onCreateNew} className="bg-gradient-to-r from-blue-600 to-purple-600">
+              <Plus className="h-4 w-4 mr-2" />
+              New Project
+            </Button>
+          </div>
         </div>
+
+        {/* Error Alert */}
+        {loadError && (
+          <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+            <div className="flex items-start space-x-3">
+              <AlertCircle className="h-5 w-5 text-amber-600 mt-0.5" />
+              <div>
+                <h3 className="text-sm font-medium text-amber-800">Connection Issue</h3>
+                <p className="text-sm text-amber-700 mt-1">
+                  Unable to connect to the backend server. Running in offline mode using local storage.
+                </p>
+                <p className="text-xs text-amber-600 mt-1">
+                  To use full features, ensure the backend server is running at the configured URL.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Search and Filters */}
         <div className="flex flex-col md:flex-row gap-4 mb-6">
