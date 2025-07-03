@@ -27,21 +27,28 @@ export interface WritingSession {
 }
 
 export interface ModelInfo {
-  id: string;
   name: string;
   provider: string;
+  model: string;
+  type: string;
+  local: boolean;
+  supports_system_prompt: boolean;
   description?: string;
   contextLength?: number;
   isAvailable: boolean;
 }
 
 export interface ModelConfig {
-  modelId: string;
+  name: string;
+  provider: string;
+  model_id: string;
+  api_key?: string;
+  base_url?: string;
+  max_tokens: number;
   temperature: number;
-  maxTokens: number;
-  topP: number;
-  frequencyPenalty: number;
-  presencePenalty: number;
+  top_p: number;
+  top_k: number;
+  custom_params: Record<string, any>;
 }
 
 export interface Chapter {
@@ -69,13 +76,13 @@ class APIService {
 
   constructor() {
     // Use the environment variable for API URL, with HTTP fallback
-    this.baseURL = import.meta.env.VITE_API_URL || 'https://localhost:8000';
+    this.baseURL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
     this.fallbackURLs = [
       this.baseURL,
-      'https://localhost:8000',
       'http://localhost:8000',
-      'https://127.0.0.1:8000',
-      'http://127.0.0.1:8000'
+      'https://localhost:8000',
+      'http://127.0.0.1:8000',
+      'https://127.0.0.1:8000'
     ];
   }
 
@@ -348,6 +355,49 @@ class APIService {
       return [];
     }
   }
+
+  async checkAllModelsHealth(): Promise<Record<string, boolean>> {
+    try {
+      const response = await this.fetchWithFallback('/api/models/health/all');
+      return await response.json();
+    } catch (error) {
+      console.error('Failed to check models health:', error);
+      return {};
+    }
+  }
+
+  async scanLocalProviders(): Promise<Record<string, any>> {
+    try {
+      const response = await this.fetchWithFallback('/api/models/scan');
+      return await response.json();
+    } catch (error) {
+      console.error('Failed to scan local providers:', error);
+      return {};
+    }
+  }
+
+  async addModel(config: ModelConfig): Promise<void> {
+    try {
+      await this.fetchWithFallback('/api/models', {
+        method: 'POST',
+        body: JSON.stringify(config),
+      });
+    } catch (error) {
+      console.error('Failed to add model:', error);
+      throw error;
+    }
+  }
+
+  async removeModel(modelName: string): Promise<void> {
+    try {
+      await this.fetchWithFallback(`/api/models/${modelName}`, {
+        method: 'DELETE',
+      });
+    } catch (error) {
+      console.error('Failed to remove model:', error);
+      throw error;
+    }
+  }
 }
 
 class LocalLLMService {
@@ -393,8 +443,8 @@ class LocalLLMService {
           stream: false,
           options: {
             temperature: options.temperature || 0.7,
-            top_p: options.topP || 0.9,
-            num_predict: options.maxTokens || 1000,
+            top_p: options.top_p || 0.9,
+            num_predict: options.max_tokens || 1000,
           },
         }),
         signal: controller.signal
@@ -430,7 +480,7 @@ Generate 8-12 chapter summaries, each 1-2 sentences long. Format as a numbered l
 
 Focus on story progression, character development, and maintaining reader engagement.`;
 
-    const response = await this.generateText(prompt, model, { maxTokens: 2048 });
+    const response = await this.generateText(prompt, model, { max_tokens: 2048 });
     
     // Parse the response into an array
     const lines = response.split('\n');
@@ -472,7 +522,7 @@ Requirements:
 
 Begin writing the chapter:`;
 
-    return this.generateText(prompt, model, { maxTokens: 2048 });
+    return this.generateText(prompt, model, { max_tokens: 2048 });
   }
 
   async getAvailableModels(): Promise<ModelInfo[]> {
@@ -492,9 +542,12 @@ Begin writing the chapter:`;
 
       const data = await response.json();
       return data.models?.map((model: any) => ({
-        id: model.name,
         name: model.name,
         provider: 'ollama',
+        model: model.name,
+        type: 'local',
+        local: true,
+        supports_system_prompt: true,
         description: model.details?.family || 'Local LLM model',
         contextLength: model.details?.parameter_size || undefined,
         isAvailable: true,
