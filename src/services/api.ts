@@ -35,18 +35,15 @@ export interface WritingSession {
 
 class APIService {
   private baseURL: string;
-  private isHttps: boolean;
 
   constructor() {
-    this.baseURL = import.meta.env.VITE_API_URL || 'https://localhost:8000';
-    this.isHttps = this.baseURL.startsWith('https');
+    this.baseURL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
   }
 
   private async fetchWithFallback(url: string, options: RequestInit = {}): Promise<Response> {
     const fullUrl = `${this.baseURL}${url}`;
     
     try {
-      // First attempt with original URL
       const response = await fetch(fullUrl, {
         ...options,
         headers: {
@@ -61,38 +58,10 @@ class APIService {
       
       return response;
     } catch (error) {
-      // If HTTPS fails, try HTTP fallback
-      if (this.isHttps && error instanceof TypeError && error.message.includes('fetch')) {
-        console.warn('HTTPS connection failed, trying HTTP fallback...');
-        const httpUrl = fullUrl.replace('https://', 'http://').replace(':8000', ':8000');
-        
-        try {
-          const response = await fetch(httpUrl, {
-            ...options,
-            headers: {
-              'Content-Type': 'application/json',
-              ...options.headers,
-            },
-          });
-          
-          if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-          }
-          
-          // Update base URL for future requests
-          this.baseURL = 'http://localhost:8000';
-          this.isHttps = false;
-          
-          return response;
-        } catch (httpError) {
-          console.error('Both HTTPS and HTTP connections failed:', httpError);
-          throw new Error('Unable to connect to backend server. Please ensure the server is running.');
-        }
-      }
+      console.error('Backend connection failed:', error);
       
-      // Re-throw original error if not a connection issue
       if (error instanceof Error) {
-        throw error;
+        throw new Error(`Unable to connect to backend server at ${this.baseURL}. Please ensure the server is running.`);
       }
       
       throw new Error('Network request failed');
