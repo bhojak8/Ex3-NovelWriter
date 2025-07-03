@@ -101,6 +101,87 @@ class APIService {
     }
   }
 
+  async getAllProjects(): Promise<NovelProject[]> {
+    try {
+      const response = await this.fetchWithFallback('/api/projects');
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch projects: ${response.statusText}`);
+      }
+
+      const projects = await response.json();
+      return projects.map((project: any) => ({
+        ...project,
+        createdAt: new Date(project.createdAt),
+        updatedAt: new Date(project.updatedAt)
+      }));
+    } catch (error) {
+      console.error('Failed to fetch projects:', error);
+      throw error;
+    }
+  }
+
+  async createProject(projectData: Partial<NovelProject>): Promise<NovelProject> {
+    try {
+      const response = await this.fetchWithFallback('/api/projects', {
+        method: 'POST',
+        body: JSON.stringify(projectData),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to create project: ${response.statusText}`);
+      }
+
+      const project = await response.json();
+      return {
+        ...project,
+        createdAt: new Date(project.createdAt),
+        updatedAt: new Date(project.updatedAt)
+      };
+    } catch (error) {
+      console.error('Failed to create project:', error);
+      throw error;
+    }
+  }
+
+  async generatePremise(prompt: string, options: any = {}): Promise<string> {
+    try {
+      const response = await this.fetchWithFallback('/api/generate/premise', {
+        method: 'POST',
+        body: JSON.stringify({ prompt, ...options }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Premise generation failed: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      return data.premise || data.response || '';
+    } catch (error) {
+      console.error('Failed to generate premise:', error);
+      throw error;
+    }
+  }
+
+  async generateOutline(projectData: Partial<NovelProject>, options: any = {}): Promise<string> {
+    try {
+      const response = await this.fetchWithFallback('/api/generate/outline', {
+        method: 'POST',
+        body: JSON.stringify({ project: projectData, ...options }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Outline generation failed: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      return data.outline || data.response || '';
+    } catch (error) {
+      console.error('Failed to generate outline:', error);
+      throw error;
+    }
+  }
+
   async generateNovel(prompt: string, options: any = {}): Promise<any> {
     const response = await this.fetchWithFallback('/generate', {
       method: 'POST',
@@ -114,7 +195,7 @@ class APIService {
     return response.json();
   }
 
-  async getModels(): Promise<any[]> {
+  async getAvailableModels(): Promise<any[]> {
     const response = await this.fetchWithFallback('/models');
     
     if (!response.ok) {
@@ -122,6 +203,10 @@ class APIService {
     }
 
     return response.json();
+  }
+
+  async getModels(): Promise<any[]> {
+    return this.getAvailableModels();
   }
 
   async testConnection(config: any): Promise<boolean> {
