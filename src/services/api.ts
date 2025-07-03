@@ -1,4 +1,3 @@
-// Enhanced API service for real Ex3 backend integration
 export interface NovelProject {
   id: string;
   title: string;
@@ -8,8 +7,8 @@ export interface NovelProject {
   chapters: Chapter[];
   status: 'planning' | 'writing' | 'completed' | 'paused';
   progress: number;
-  writingStyle: '一' | '三';
-  targetLength: 'short' | 'medium' | 'long' | 'epic';
+  writingStyle: string;
+  targetLength: string;
   themes?: string;
   createdAt: string;
   modifiedAt: string;
@@ -21,10 +20,7 @@ export interface Chapter {
   title: string;
   content: string;
   summary: string;
-  entities: {
-    characters: string[];
-    locations: string[];
-  };
+  entities: any;
   wordCount: number;
 }
 
@@ -34,389 +30,242 @@ export interface WritingSession {
   currentChapter: number;
   isActive: boolean;
   generatedContent: string;
-  entityDatabase: Record<string, string>;
+  entityDatabase: any;
 }
 
-export interface GenerationResult {
-  content: string;
-  entities: {
-    characters: string[];
-    locations: string[];
-  };
-}
+class APIService {
+  private baseURL: string;
+  private isHttps: boolean;
 
-export interface ModelInfo {
-  name: string;
-  provider: string;
-  model: string;
-  type: string;
-  supports_system_prompt: boolean;
-  supports_streaming: boolean;
-  local?: boolean;
-  cloud?: boolean;
-}
-
-export interface ModelConfig {
-  name: string;
-  provider: string;
-  model_id: string;
-  api_key?: string;
-  base_url?: string;
-  max_tokens: number;
-  temperature: number;
-  top_p: number;
-  top_k: number;
-  custom_params: Record<string, any>;
-}
-
-class Ex3ApiService {
-  private baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-
-  private async handleResponse<T>(response: Response): Promise<T> {
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`API Error: ${response.status} - ${error}`);
-    }
-    return response.json();
+  constructor() {
+    this.baseURL = import.meta.env.VITE_API_URL || 'https://localhost:8000';
+    this.isHttps = this.baseURL.startsWith('https');
   }
 
-  // Model Management
-  async getAvailableModels(): Promise<ModelInfo[]> {
-    const response = await fetch(`${this.baseUrl}/api/models/`);
-    return this.handleResponse<ModelInfo[]>(response);
-  }
-
-  async addModel(config: ModelConfig): Promise<void> {
-    const response = await fetch(`${this.baseUrl}/api/models/`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(config)
-    });
-    await this.handleResponse<any>(response);
-  }
-
-  async removeModel(modelName: string): Promise<void> {
-    const response = await fetch(`${this.baseUrl}/api/models/${modelName}`, {
-      method: 'DELETE'
-    });
-    if (!response.ok) {
-      throw new Error(`Failed to remove model: ${response.status}`);
-    }
-  }
-
-  async checkModelHealth(modelName: string): Promise<boolean> {
+  private async fetchWithFallback(url: string, options: RequestInit = {}): Promise<Response> {
+    const fullUrl = `${this.baseURL}${url}`;
+    
     try {
-      const response = await fetch(`${this.baseUrl}/api/models/${modelName}/health`);
-      const data = await this.handleResponse<{ healthy: boolean }>(response);
-      return data.healthy;
-    } catch {
+      // First attempt with original URL
+      const response = await fetch(fullUrl, {
+        ...options,
+        headers: {
+          'Content-Type': 'application/json',
+          ...options.headers,
+        },
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
+      return response;
+    } catch (error) {
+      // If HTTPS fails, try HTTP fallback
+      if (this.isHttps && error instanceof TypeError && error.message.includes('fetch')) {
+        console.warn('HTTPS connection failed, trying HTTP fallback...');
+        const httpUrl = fullUrl.replace('https://', 'http://').replace(':8000', ':8000');
+        
+        try {
+          const response = await fetch(httpUrl, {
+            ...options,
+            headers: {
+              'Content-Type': 'application/json',
+              ...options.headers,
+            },
+          });
+          
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+          }
+          
+          // Update base URL for future requests
+          this.baseURL = 'http://localhost:8000';
+          this.isHttps = false;
+          
+          return response;
+        } catch (httpError) {
+          console.error('Both HTTPS and HTTP connections failed:', httpError);
+          throw new Error('Unable to connect to backend server. Please ensure the server is running.');
+        }
+      }
+      
+      // Re-throw original error if not a connection issue
+      if (error instanceof Error) {
+        throw error;
+      }
+      
+      throw new Error('Network request failed');
+    }
+  }
+
+  async checkHealth(): Promise<boolean> {
+    try {
+      const response = await this.fetchWithFallback('/health');
+      const data = await response.json();
+      return data.status === 'healthy';
+    } catch (error) {
+      console.error('Health check failed:', error);
       return false;
     }
   }
 
-  async checkAllModelsHealth(): Promise<Record<string, boolean>> {
-    try {
-      const response = await fetch(`${this.baseUrl}/api/models/health/all`);
-      return this.handleResponse<Record<string, boolean>>(response);
-    } catch {
-      return {};
-    }
-  }
-
-  async scanLocalProviders(): Promise<Record<string, any>> {
-    try {
-      const response = await fetch(`${this.baseUrl}/api/models/providers/scan`, {
-        method: 'POST'
-      });
-      return this.handleResponse<Record<string, any>>(response);
-    } catch {
-      return {};
-    }
-  }
-
-  async generateWithModel(modelName: string, prompt: string, options: {
-    max_tokens?: number;
-    temperature?: number;
-    top_p?: number;
-    top_k?: number;
-    stop_sequences?: string[];
-    system_prompt?: string;
-  } = {}): Promise<{ text: string; usage: any; metadata: any }> {
-    const response = await fetch(`${this.baseUrl}/api/models/${modelName}/generate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model_name: modelName,
-        prompt,
-        ...options
-      })
-    });
-    return this.handleResponse<{ text: string; usage: any; metadata: any }>(response);
-  }
-
-  // Project Management
   async getAllProjects(): Promise<NovelProject[]> {
-    const response = await fetch(`${this.baseUrl}/api/projects`);
-    return this.handleResponse<NovelProject[]>(response);
+    try {
+      const response = await this.fetchWithFallback('/api/projects');
+      return await response.json();
+    } catch (error) {
+      console.error('Failed to get projects:', error);
+      throw error;
+    }
   }
 
   async createProject(projectData: Partial<NovelProject>): Promise<NovelProject> {
-    const response = await fetch(`${this.baseUrl}/api/projects`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        ...projectData,
-        createdAt: new Date().toISOString(),
-        modifiedAt: new Date().toISOString(),
-        wordCount: 0
-      })
-    });
-    return this.handleResponse<NovelProject>(response);
-  }
-
-  async getProject(id: string): Promise<NovelProject> {
-    const response = await fetch(`${this.baseUrl}/api/projects/${id}`);
-    return this.handleResponse<NovelProject>(response);
-  }
-
-  async updateProject(id: string, updates: Partial<NovelProject>): Promise<NovelProject> {
-    const response = await fetch(`${this.baseUrl}/api/projects/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        ...updates,
-        modifiedAt: new Date().toISOString()
-      })
-    });
-    return this.handleResponse<NovelProject>(response);
-  }
-
-  async deleteProject(id: string): Promise<void> {
-    const response = await fetch(`${this.baseUrl}/api/projects/${id}`, {
-      method: 'DELETE'
-    });
-    if (!response.ok) {
-      throw new Error(`Failed to delete project: ${response.status}`);
+    try {
+      const response = await this.fetchWithFallback('/api/projects', {
+        method: 'POST',
+        body: JSON.stringify(projectData),
+      });
+      return await response.json();
+    } catch (error) {
+      console.error('Failed to create project:', error);
+      throw error;
     }
   }
 
-  // AI Generation - Enhanced with model selection
-  async generateOutline(premise: string, genre: string, modelName: string = 'gpt-3.5-turbo'): Promise<string[]> {
-    const response = await fetch(`${this.baseUrl}/api/generate/outline`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ premise, genre, model_name: modelName })
-    });
-    const data = await this.handleResponse<string[]>(response);
-    return Array.isArray(data) ? data : [data];
-  }
-
-  async generatePremise(genre: string, themes?: string, modelName: string = 'gpt-3.5-turbo'): Promise<{ premise: string; title: string }> {
-    const response = await fetch(`${this.baseUrl}/api/generate/premise`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ genre, themes, model_name: modelName })
-    });
-    return this.handleResponse<{ premise: string; title: string }>(response);
-  }
-
-  // Writing Process - Enhanced with model selection
-  async startWritingSession(projectId: string): Promise<WritingSession> {
-    const response = await fetch(`${this.baseUrl}/api/writing/start`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectId })
-    });
-    return this.handleResponse<WritingSession>(response);
-  }
-
-  async generateChapterContent(
-    projectId: string, 
-    chapterIndex: number,
-    previousContext?: string,
-    modelName: string = 'gpt-3.5-turbo'
-  ): Promise<GenerationResult> {
-    const response = await fetch(`${this.baseUrl}/api/writing/generate-chapter`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectId, chapterIndex, previousContext, model_name: modelName })
-    });
-    return this.handleResponse<GenerationResult>(response);
-  }
-
-  // Export functionality
-  async exportNovel(projectId: string, format: 'txt' | 'docx' | 'pdf' = 'txt'): Promise<{ content: string; filename: string }> {
-    const response = await fetch(`${this.baseUrl}/api/export/${projectId}?format=${format}`);
-    return this.handleResponse<{ content: string; filename: string }>(response);
-  }
-
-  // Health check
-  async checkHealth(): Promise<boolean> {
+  async updateProject(projectId: string, updates: Partial<NovelProject>): Promise<NovelProject> {
     try {
-      const response = await fetch(`${this.baseUrl}/health`, {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' }
+      const response = await this.fetchWithFallback(`/api/projects/${projectId}`, {
+        method: 'PATCH',
+        body: JSON.stringify(updates),
       });
-      return response.ok;
-    } catch {
-      return false;
+      return await response.json();
+    } catch (error) {
+      console.error('Failed to update project:', error);
+      throw error;
+    }
+  }
+
+  async deleteProject(projectId: string): Promise<void> {
+    try {
+      await this.fetchWithFallback(`/api/projects/${projectId}`, {
+        method: 'DELETE',
+      });
+    } catch (error) {
+      console.error('Failed to delete project:', error);
+      throw error;
+    }
+  }
+
+  async generatePremise(genre: string, themes?: string, modelName?: string): Promise<{ title: string; premise: string }> {
+    try {
+      const response = await this.fetchWithFallback('/api/generate/premise', {
+        method: 'POST',
+        body: JSON.stringify({ genre, themes, model_name: modelName }),
+      });
+      return await response.json();
+    } catch (error) {
+      console.error('Failed to generate premise:', error);
+      throw error;
+    }
+  }
+
+  async generateOutline(premise: string, genre: string, modelName?: string): Promise<string[]> {
+    try {
+      const response = await this.fetchWithFallback('/api/generate/outline', {
+        method: 'POST',
+        body: JSON.stringify({ premise, genre, model_name: modelName }),
+      });
+      return await response.json();
+    } catch (error) {
+      console.error('Failed to generate outline:', error);
+      throw error;
+    }
+  }
+
+  async startWritingSession(projectId: string): Promise<WritingSession> {
+    try {
+      const response = await this.fetchWithFallback('/api/writing/start', {
+        method: 'POST',
+        body: JSON.stringify({ projectId }),
+      });
+      return await response.json();
+    } catch (error) {
+      console.error('Failed to start writing session:', error);
+      throw error;
+    }
+  }
+
+  async generateChapterContent(projectId: string, chapterIndex: number, modelName?: string): Promise<{ content: string; entities: any }> {
+    try {
+      const response = await this.fetchWithFallback('/api/writing/generate-chapter', {
+        method: 'POST',
+        body: JSON.stringify({ 
+          projectId, 
+          chapterIndex,
+          model_name: modelName
+        }),
+      });
+      return await response.json();
+    } catch (error) {
+      console.error('Failed to generate chapter content:', error);
+      throw error;
+    }
+  }
+
+  async exportNovel(projectId: string, format: string = 'txt'): Promise<{ content: string; filename: string }> {
+    try {
+      const response = await this.fetchWithFallback(`/api/export/${projectId}?format=${format}`);
+      return await response.json();
+    } catch (error) {
+      console.error('Failed to export novel:', error);
+      throw error;
     }
   }
 }
 
-// Enhanced local LLM service with multiple provider support
+// Local LLM Service for Ollama integration
 class LocalLLMService {
-  public baseUrl = import.meta.env.VITE_LOCAL_LLM_URL || 'http://localhost:11434'; // Ollama default
-  public providers = {
-    ollama: 'http://localhost:11434',
-    llamacpp: 'http://localhost:8080',
-    textgen: 'http://localhost:5000'
-  };
+  private baseURL: string;
 
-  async checkHealth(provider: string = 'ollama'): Promise<boolean> {
+  constructor() {
+    this.baseURL = import.meta.env.VITE_LOCAL_LLM_URL || 'http://localhost:11434';
+  }
+
+  async checkHealth(): Promise<boolean> {
     try {
-      const baseUrl = this.providers[provider as keyof typeof this.providers] || this.baseUrl;
-      let endpoint = '';
-      
-      switch (provider) {
-        case 'ollama':
-          endpoint = '/api/tags';
-          break;
-        case 'llamacpp':
-          endpoint = '/health';
-          break;
-        case 'textgen':
-          endpoint = '/api/v1/model';
-          break;
-        default:
-          endpoint = '/api/tags';
-      }
-      
-      const response = await fetch(`${baseUrl}${endpoint}`, {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' }
-      });
+      const response = await fetch(`${this.baseURL}/api/tags`);
       return response.ok;
     } catch {
       return false;
     }
   }
 
-  async getAvailableModels(provider: string = 'ollama'): Promise<string[]> {
+  async generateText(prompt: string, model: string = 'llama2'): Promise<string> {
     try {
-      const baseUrl = this.providers[provider as keyof typeof this.providers] || this.baseUrl;
-      
-      if (provider === 'ollama') {
-        const response = await fetch(`${baseUrl}/api/tags`);
-        if (response.ok) {
-          const data = await response.json();
-          return data.models?.map((m: any) => m.name) || [];
-        }
-      }
-      
-      return [];
-    } catch {
-      return [];
-    }
-  }
+      const response = await fetch(`${this.baseURL}/api/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model,
+          prompt,
+          stream: false
+        })
+      });
 
-  async generateText(prompt: string, model: string = 'llama2', provider: string = 'ollama'): Promise<string> {
-    try {
-      const baseUrl = this.providers[provider as keyof typeof this.providers] || this.baseUrl;
-      
-      switch (provider) {
-        case 'ollama':
-          return this.generateWithOllama(baseUrl, prompt, model);
-        case 'llamacpp':
-          return this.generateWithLlamaCpp(baseUrl, prompt);
-        case 'textgen':
-          return this.generateWithTextGen(baseUrl, prompt);
-        default:
-          return this.generateWithOllama(baseUrl, prompt, model);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
+
+      const data = await response.json();
+      return data.response;
     } catch (error) {
-      console.error(`${provider} generation failed:`, error);
-      throw new Error(`${provider} is not available. Please ensure it is running.`);
+      console.error('Local LLM generation failed:', error);
+      throw error;
     }
   }
 
-  private async generateWithOllama(baseUrl: string, prompt: string, model: string): Promise<string> {
-    const response = await fetch(`${baseUrl}/api/generate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model,
-        prompt,
-        stream: false,
-        options: {
-          temperature: 0.8,
-          top_p: 0.9,
-          top_k: 40
-        }
-      })
-    });
-
-    if (!response.ok) {
-      throw new Error(`Ollama API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    return data.response;
-  }
-
-  private async generateWithLlamaCpp(baseUrl: string, prompt: string): Promise<string> {
-    const response = await fetch(`${baseUrl}/completion`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        prompt,
-        n_predict: 2048,
-        temperature: 0.8,
-        top_p: 0.9,
-        top_k: 40,
-        stream: false
-      })
-    });
-
-    if (!response.ok) {
-      throw new Error(`llama.cpp API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    return data.content;
-  }
-
-  private async generateWithTextGen(baseUrl: string, prompt: string): Promise<string> {
-    const response = await fetch(`${baseUrl}/api/v1/generate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        prompt,
-        max_new_tokens: 2048,
-        temperature: 0.8,
-        top_p: 0.9,
-        top_k: 40,
-        do_sample: true,
-        stream: false
-      })
-    });
-
-    if (!response.ok) {
-      throw new Error(`TextGen WebUI API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    let generatedText = data.results[0].text;
-    
-    // Remove the original prompt from the response
-    if (generatedText.startsWith(prompt)) {
-      generatedText = generatedText.slice(prompt.length).trim();
-    }
-    
-    return generatedText;
-  }
-
-  async generateOutline(premise: string, genre: string, model: string = 'llama2', provider: string = 'ollama'): Promise<string[]> {
+  async generateOutline(premise: string, genre: string, model: string = 'llama2'): Promise<string[]> {
     const prompt = `Create a detailed chapter outline for a ${genre} novel with the following premise:
 
 ${premise}
@@ -429,30 +278,36 @@ Generate 8-12 chapter summaries, each 1-2 sentences long. Format as a numbered l
 
 Focus on story progression, character development, and maintaining reader engagement.`;
 
-    const response = await this.generateText(prompt, model, provider);
+    const response = await this.generateText(prompt, model);
     
     // Parse the response into an array
-    const lines = response.split('\n').filter(line => line.trim());
-    const chapters = lines
-      .filter(line => /^\d+\./.test(line.trim()))
-      .map(line => line.replace(/^\d+\.\s*/, '').trim());
+    const lines = response.split('\n');
+    const chapters = [];
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed && (trimmed[0]?.match(/\d/) || trimmed.startsWith('-'))) {
+        // Remove numbering and clean up
+        const chapter = trimmed.split('.', 2)[1]?.trim() || trimmed.replace(/^\d+\.?\s*/, '').replace(/^-\s*/, '');
+        if (chapter) {
+          chapters.push(chapter);
+        }
+      }
+    }
     
     return chapters.length > 0 ? chapters : [response];
   }
 
   async generateChapterContent(
-    chapterSummary: string,
-    previousContext: string = '',
-    genre: string,
-    writingStyle: string = '三',
-    model: string = 'llama2',
-    provider: string = 'ollama'
+    chapterSummary: string, 
+    previousContext: string, 
+    genre: string, 
+    writingStyle: string,
+    model: string = 'llama2'
   ): Promise<string> {
     const styleText = writingStyle === '一' ? 'first person (我)' : 'third person (他/她)';
+    const context = previousContext ? `Previous context: ${previousContext}\n\n` : '';
     
-    const prompt = `Write a detailed chapter for a ${genre} novel in ${styleText} perspective.
-
-${previousContext ? `Previous context: ${previousContext.slice(-500)}...` : ''}
+    const prompt = `${context}Write a detailed chapter for a ${genre} novel in ${styleText} perspective.
 
 Chapter summary: ${chapterSummary}
 
@@ -466,9 +321,9 @@ Requirements:
 
 Begin writing the chapter:`;
 
-    return this.generateText(prompt, model, provider);
+    return await this.generateText(prompt, model);
   }
 }
 
-export const apiService = new Ex3ApiService();
+export const apiService = new APIService();
 export const localLLMService = new LocalLLMService();
