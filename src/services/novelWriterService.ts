@@ -1,4 +1,4 @@
-import APIService from './apiService';
+import LocalLLMService from './localLLMService';
 
 interface NovelProject {
   id: string;
@@ -19,10 +19,10 @@ interface NovelProject {
 }
 
 class NovelWriterService {
-  private apiService: APIService;
+  private llmService: LocalLLMService;
 
-  constructor(apiService: APIService) {
-    this.apiService = apiService;
+  constructor(llmService: LocalLLMService) {
+    this.llmService = llmService;
   }
 
   async generatePremise(genre: string, themes?: string): Promise<string> {
@@ -32,10 +32,9 @@ class NovelWriterService {
 小说标题：《标题》
 简介：详细的故事简介`;
 
-    const response = await this.apiService.generate({
+    const response = await this.llmService.generate({
       prompt,
-      temperature: 1.0,
-      model: 'gemini'
+      temperature: 1.0
     });
 
     return response;
@@ -52,10 +51,9 @@ ${project.premise}
 第2部分：章节标题 - 章节内容概述
 ...`;
 
-    const response = await this.apiService.generate({
+    const response = await this.llmService.generate({
       prompt,
-      temperature: 0.8,
-      model: 'gemini'
+      temperature: 0.8
     });
 
     // Parse the response into an array of chapter outlines
@@ -115,11 +113,10 @@ ${chapterOutline}
 请以第${project.writingStyle}人称视角扩写，生成2000-3000字的章节内容。`;
     }
 
-    const content = await this.apiService.generate({
+    const content = await this.llmService.generate({
       prompt,
       temperature: 0.9,
-      maxTokens: 4096,
-      model: 'gemini'
+      maxTokens: 4096
     });
 
     // Generate chapter summary
@@ -127,11 +124,10 @@ ${chapterOutline}
 
 ${content}`;
 
-    const summary = await this.apiService.generate({
+    const summary = await this.llmService.generate({
       prompt: summaryPrompt,
       temperature: 0.7,
-      maxTokens: 500,
-      model: 'perplexity'
+      maxTokens: 500
     });
 
     return { content, summary };
@@ -146,11 +142,10 @@ ${content}
 人物：人物1、人物2、人物3
 地点：地点1、地点2、地点3`;
 
-    const response = await this.apiService.generate({
+    const response = await this.llmService.generate({
       prompt,
       temperature: 0.5,
-      maxTokens: 1000,
-      model: 'perplexity'
+      maxTokens: 1000
     });
 
     const lines = response.split('\n');
@@ -182,11 +177,10 @@ ${newContent}
 人物名｜人物身份、与他人关系等重要信息
 地点名｜地点用途、特点等重要信息`;
 
-    return await this.apiService.generate({
+    return await this.llmService.generate({
       prompt,
       temperature: 0.6,
-      maxTokens: 2000,
-      model: 'perplexity'
+      maxTokens: 2000
     });
   }
 }
