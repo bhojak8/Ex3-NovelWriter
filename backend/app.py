@@ -17,7 +17,7 @@ app = FastAPI(title="Ex3 Novel Writer API", version="1.0.0")
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000"],
+    allow_origins=["http://localhost:5173", "http://localhost:3000", "https://localhost:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -78,6 +78,16 @@ class ChapterRequest(BaseModel):
 projects_db: Dict[str, Dict[str, Any]] = {}
 writing_sessions: Dict[str, Dict[str, Any]] = {}
 
+# Health check endpoint
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy", "message": "Ex3 Novel Writer API is running"}
+
+# Get all projects endpoint
+@app.get("/api/projects")
+async def get_all_projects():
+    return list(projects_db.values())
+
 @app.post("/api/projects")
 async def create_project(project: ProjectCreate):
     project_id = f"proj_{len(projects_db) + 1}"
@@ -93,7 +103,10 @@ async def create_project(project: ProjectCreate):
         "outline": [],
         "chapters": [],
         "status": "planning",
-        "progress": 0
+        "progress": 0,
+        "createdAt": "2024-01-01T00:00:00Z",
+        "modifiedAt": "2024-01-01T00:00:00Z",
+        "wordCount": 0
     }
     
     projects_db[project_id] = project_data
@@ -115,6 +128,14 @@ async def update_project(project_id: str, updates: ProjectUpdate):
     project.update(update_data)
     
     return project
+
+@app.delete("/api/projects/{project_id}")
+async def delete_project(project_id: str):
+    if project_id not in projects_db:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    del projects_db[project_id]
+    return {"message": "Project deleted successfully"}
 
 @app.post("/api/generate/outline")
 async def generate_outline(request: OutlineRequest):
