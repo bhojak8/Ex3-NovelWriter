@@ -1,10 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { BookOpen, Sparkles, Settings, Download, Play, Pause, RotateCcw } from 'lucide-react';
 import NovelCreator from './components/NovelCreator';
 import StoryOutline from './components/StoryOutline';
 import WritingProgress from './components/WritingProgress';
+import APISettings from './components/APISettings';
 import { Button } from './components/ui/Button';
+import APIService from './services/apiService';
+import NovelWriterService from './services/novelWriterService';
 
 interface NovelProject {
   id: string;
@@ -19,12 +22,44 @@ interface NovelProject {
   }>;
   status: 'planning' | 'writing' | 'completed';
   progress: number;
+  writingStyle: '一' | '三';
+  targetLength: string;
+  themes?: string;
 }
 
 function App() {
   const [currentProject, setCurrentProject] = useState<NovelProject | null>(null);
   const [isWriting, setIsWriting] = useState(false);
   const [activeTab, setActiveTab] = useState<'create' | 'outline' | 'write'>('create');
+  const [showAPISettings, setShowAPISettings] = useState(false);
+  const [apiService, setApiService] = useState<APIService | null>(null);
+  const [novelWriterService, setNovelWriterService] = useState<NovelWriterService | null>(null);
+  const [isAPIConfigured, setIsAPIConfigured] = useState(false);
+
+  useEffect(() => {
+    // Check if API keys are already configured
+    const geminiKey = localStorage.getItem('gemini_api_key');
+    const perplexityKey = localStorage.getItem('perplexity_api_key');
+    
+    if (geminiKey && perplexityKey) {
+      const apiSvc = new APIService({
+        geminiApiKey: geminiKey,
+        perplexityApiKey: perplexityKey
+      });
+      setApiService(apiSvc);
+      setNovelWriterService(new NovelWriterService(apiSvc));
+      setIsAPIConfigured(true);
+    } else {
+      setShowAPISettings(true);
+    }
+  }, []);
+
+  const handleAPIConfigSave = (config: { geminiApiKey: string; perplexityApiKey: string }) => {
+    const apiSvc = new APIService(config);
+    setApiService(apiSvc);
+    setNovelWriterService(new NovelWriterService(apiSvc));
+    setIsAPIConfigured(true);
+  };
 
   const handleCreateProject = (projectData: Partial<NovelProject>) => {
     const newProject: NovelProject = {
@@ -36,6 +71,9 @@ function App() {
       chapters: [],
       status: 'planning',
       progress: 0,
+      writingStyle: projectData.writingStyle || '三',
+      targetLength: projectData.targetLength || 'medium',
+      themes: projectData.themes,
       ...projectData
     };
     setCurrentProject(newProject);
@@ -65,30 +103,40 @@ function App() {
               </div>
               <div>
                 <h1 className="text-xl font-bold text-slate-900">Ex3 Novel Writer</h1>
-                <p className="text-sm text-slate-600">AI-Powered Story Creation</p>
+                <p className="text-sm text-slate-600">AI-Powered Story Creation with Gemini & Perplexity</p>
               </div>
             </div>
             
-            {currentProject && (
-              <div className="flex items-center space-x-4">
+            <div className="flex items-center space-x-4">
+              {currentProject && (
                 <div className="text-sm text-slate-600">
                   <span className="font-medium">{currentProject.title}</span>
                   <span className="ml-2 px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs">
                     {currentProject.status}
                   </span>
                 </div>
-                <Button variant="outline" size="sm">
+              )}
+              
+              <div className="flex items-center space-x-2">
+                {isAPIConfigured && (
+                  <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                )}
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => setShowAPISettings(true)}
+                >
                   <Settings className="h-4 w-4 mr-2" />
-                  Settings
+                  {isAPIConfigured ? 'API Settings' : 'Configure APIs'}
                 </Button>
               </div>
-            )}
+            </div>
           </div>
         </div>
       </header>
 
       {/* Navigation Tabs */}
-      {currentProject && (
+      {currentProject && isAPIConfigured && (
         <nav className="border-b border-slate-200 bg-white">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex space-x-8">
@@ -121,7 +169,33 @@ function App() {
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <AnimatePresence mode="wait">
-          {!currentProject ? (
+          {!isAPIConfigured ? (
+            <motion.div
+              key="api-setup"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="text-center py-16"
+            >
+              <div className="writing-animation inline-block p-4 rounded-2xl mb-6">
+                <Settings className="h-16 w-16 text-white" />
+              </div>
+              <h2 className="text-4xl font-bold text-slate-900 mb-4">
+                Configure Your AI Services
+              </h2>
+              <p className="text-xl text-slate-600 mb-8 max-w-2xl mx-auto">
+                To start creating novels, you'll need API keys for Gemini Pro and Perplexity.
+                These services power the AI writing capabilities.
+              </p>
+              <Button
+                onClick={() => setShowAPISettings(true)}
+                className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
+              >
+                <Settings className="h-5 w-5 mr-2" />
+                Configure API Keys
+              </Button>
+            </motion.div>
+          ) : !currentProject ? (
             <motion.div
               key="welcome"
               initial={{ opacity: 0, y: 20 }}
@@ -139,7 +213,10 @@ function App() {
                 Create compelling novels with AI assistance. From initial concept to finished manuscript,
                 our three-stage process helps you craft engaging stories.
               </p>
-              <NovelCreator onCreateProject={handleCreateProject} />
+              <NovelCreator 
+                onCreateProject={handleCreateProject} 
+                novelWriterService={novelWriterService}
+              />
             </motion.div>
           ) : (
             <motion.div
@@ -153,6 +230,7 @@ function App() {
                 <NovelCreator 
                   onCreateProject={handleCreateProject}
                   existingProject={currentProject}
+                  novelWriterService={novelWriterService}
                 />
               )}
               
@@ -161,6 +239,7 @@ function App() {
                   project={currentProject}
                   onUpdateProject={setCurrentProject}
                   onStartWriting={handleStartWriting}
+                  novelWriterService={novelWriterService}
                 />
               )}
               
@@ -170,12 +249,20 @@ function App() {
                   onUpdateProject={setCurrentProject}
                   isWriting={isWriting}
                   onToggleWriting={() => setIsWriting(!isWriting)}
+                  novelWriterService={novelWriterService}
                 />
               )}
             </motion.div>
           )}
         </AnimatePresence>
       </main>
+
+      {/* API Settings Modal */}
+      <APISettings
+        isOpen={showAPISettings}
+        onClose={() => setShowAPISettings(false)}
+        onSave={handleAPIConfigSave}
+      />
     </div>
   );
 }

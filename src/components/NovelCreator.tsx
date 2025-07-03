@@ -5,16 +5,18 @@ import { Button } from './ui/Button';
 import { Input } from './ui/Input';
 import { Textarea } from './ui/Textarea';
 import { Select } from './ui/Select';
+import NovelWriterService from '../services/novelWriterService';
 
 interface NovelCreatorProps {
   onCreateProject: (project: any) => void;
   existingProject?: any;
+  novelWriterService?: NovelWriterService | null;
 }
 
 const GENRES = [
   'Fantasy', 'Science Fiction', 'Mystery', 'Romance', 'Thriller',
   'Horror', 'Historical Fiction', 'Contemporary Fiction', 'Adventure',
-  'Young Adult', 'Literary Fiction', 'Dystopian'
+  'Young Adult', 'Literary Fiction', 'Dystopian', '玄幻', '武侠', '都市', '言情'
 ];
 
 const WRITING_STYLES = [
@@ -22,7 +24,7 @@ const WRITING_STYLES = [
   { value: '三', label: 'Third Person (他/她)' }
 ];
 
-export default function NovelCreator({ onCreateProject, existingProject }: NovelCreatorProps) {
+export default function NovelCreator({ onCreateProject, existingProject, novelWriterService }: NovelCreatorProps) {
   const [formData, setFormData] = useState({
     title: existingProject?.title || '',
     genre: existingProject?.genre || 'Fantasy',
@@ -38,29 +40,41 @@ export default function NovelCreator({ onCreateProject, existingProject }: Novel
     e.preventDefault();
     setIsGenerating(true);
     
-    // Simulate API call delay
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    // Simulate processing delay
+    await new Promise(resolve => setTimeout(resolve, 1000));
     
     onCreateProject(formData);
     setIsGenerating(false);
   };
 
   const generatePremise = async () => {
+    if (!novelWriterService) {
+      alert('Please configure your API keys first');
+      return;
+    }
+
     setIsGenerating(true);
-    // Simulate AI premise generation
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    
-    const samplePremises = {
-      'Fantasy': 'In a world where magic is forbidden, a young librarian discovers an ancient tome that awakens dormant powers within her, forcing her to choose between safety and saving her realm from an approaching darkness.',
-      'Science Fiction': 'When humanity\'s first interstellar colony ship arrives at its destination, the crew discovers the planet is already inhabited by their own descendants from a future timeline.',
-      'Mystery': 'A detective investigating a series of impossible murders realizes that each victim had recently visited the same antique shop, where time itself seems to flow differently.',
-      'Romance': 'Two rival food truck owners are forced to work together when they\'re both selected for a prestigious culinary competition, discovering that their heated arguments might actually be sparks of attraction.'
-    };
-    
-    setFormData(prev => ({
-      ...prev,
-      premise: samplePremises[formData.genre as keyof typeof samplePremises] || 'A compelling story waiting to be told...'
-    }));
+    try {
+      const response = await novelWriterService.generatePremise(formData.genre, formData.themes);
+      
+      // Parse the response to extract title and premise
+      const lines = response.split('\n');
+      const titleLine = lines.find(line => line.includes('小说标题：'));
+      const summaryLine = lines.find(line => line.includes('简介：'));
+      
+      if (titleLine) {
+        const title = titleLine.replace('小说标题：', '').replace(/《|》/g, '').trim();
+        setFormData(prev => ({ ...prev, title }));
+      }
+      
+      if (summaryLine) {
+        const premise = summaryLine.replace('简介：', '').trim();
+        setFormData(prev => ({ ...prev, premise }));
+      }
+    } catch (error) {
+      console.error('Error generating premise:', error);
+      alert('Failed to generate premise. Please check your API configuration.');
+    }
     setIsGenerating(false);
   };
 
@@ -120,11 +134,11 @@ export default function NovelCreator({ onCreateProject, existingProject }: Novel
                 variant="outline"
                 size="sm"
                 onClick={generatePremise}
-                disabled={isGenerating}
+                disabled={isGenerating || !novelWriterService}
                 className="text-xs"
               >
                 <Wand2 className="h-3 w-3 mr-1" />
-                Generate AI Premise
+                {isGenerating ? 'Generating...' : 'Generate AI Premise'}
               </Button>
             </div>
             <Textarea
