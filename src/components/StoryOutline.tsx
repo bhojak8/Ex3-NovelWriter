@@ -3,16 +3,15 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, Edit3, Trash2, Play, BookOpen, Lightbulb } from 'lucide-react';
 import { Button } from './ui/Button';
 import { Input } from './ui/Input';
-import NovelWriterService from '../services/novelWriterService';
+import { Textarea } from './ui/Textarea';
 
 interface StoryOutlineProps {
   project: any;
   onUpdateProject: (project: any) => void;
   onStartWriting: () => void;
-  novelWriterService?: NovelWriterService | null;
 }
 
-export default function StoryOutline({ project, onUpdateProject, onStartWriting, novelWriterService }: StoryOutlineProps) {
+export default function StoryOutline({ project, onUpdateProject, onStartWriting }: StoryOutlineProps) {
   const [outline, setOutline] = useState(project.outline || []);
   const [isGenerating, setIsGenerating] = useState(false);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
@@ -23,19 +22,25 @@ export default function StoryOutline({ project, onUpdateProject, onStartWriting,
   }, [outline]);
 
   const generateOutline = async () => {
-    if (!novelWriterService) {
-      alert('Please configure your API keys first');
-      return;
-    }
-
     setIsGenerating(true);
-    try {
-      const generatedOutline = await novelWriterService.generateOutline(project);
-      setOutline(generatedOutline);
-    } catch (error) {
-      console.error('Error generating outline:', error);
-      alert('Failed to generate outline. Please check your API configuration.');
-    }
+    
+    // Simulate AI outline generation
+    await new Promise(resolve => setTimeout(resolve, 3000));
+    
+    const sampleOutline = [
+      "Chapter 1: The Discovery - Our protagonist stumbles upon the mysterious artifact that will change everything.",
+      "Chapter 2: First Contact - Initial attempts to understand the artifact's power lead to unexpected consequences.",
+      "Chapter 3: The Mentor - A wise guide appears to help navigate the new reality.",
+      "Chapter 4: Rising Stakes - The antagonist becomes aware of the protagonist's newfound abilities.",
+      "Chapter 5: The Test - A crucial challenge that tests both skill and character.",
+      "Chapter 6: Betrayal - A trusted ally reveals their true intentions.",
+      "Chapter 7: The Darkest Hour - All seems lost as the protagonist faces their greatest fear.",
+      "Chapter 8: Revelation - A crucial truth is revealed that changes everything.",
+      "Chapter 9: The Final Battle - The climactic confrontation between good and evil.",
+      "Chapter 10: Resolution - The aftermath and new beginning."
+    ];
+    
+    setOutline(sampleOutline);
     setIsGenerating(false);
   };
 
@@ -83,7 +88,7 @@ export default function StoryOutline({ project, onUpdateProject, onStartWriting,
           <div className="flex space-x-3">
             <Button
               onClick={generateOutline}
-              disabled={isGenerating || !novelWriterService}
+              disabled={isGenerating}
               variant="outline"
             >
               {isGenerating ? (

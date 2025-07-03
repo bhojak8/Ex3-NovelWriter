@@ -1,190 +1,84 @@
-# Ex3 Novel Writer - Local LLM Edition
+# Ex3 : Automatic Novel Writing by Extracting, Excelsior and Expanding
 
-A web-based implementation of the Ex3 (Extracting, Excelsior, Expanding) framework for automatic novel writing, designed to work with local Large Language Models.
+Pytorch implementation of [Ex3 : Automatic Novel Writing by Extracting, Excelsior and Expanding](https://arxiv.org/pdf/2408.08506) which proposes a framework to automatically construct storyline by learning from raw novels, and generate new novels that imitate the linguistic style of a specific genre.
 
-![Ex3 Framework](imgs/framework-ex3.png)
+![framework](imgs/framework-ex3.png)
 
-## Features
+## instruction
+### Preparation
+Raw novel should be transfered to json like:
+```json
+{
+    "book_title": "Gone with the wind",
+    "author": "Margaret Mitchell",
+    "tag": "war, romantic",
+    "chapters": [
+        {
+            "chapter_title":"",
+            "chapter_content":""
+        },
+        {
+            "chapter_title":"",
+            "chapter_content":""
+        },
+        ...
+    ]
+}
+```
+And you need an LLM and an embedder.
 
-### 🤖 **Local LLM Integration**
-- Works with popular local LLM servers (Ollama, LM Studio, Text Generation WebUI, vLLM)
-- No external API keys required
-- Full privacy - your stories never leave your machine
-- Supports any OpenAI-compatible API endpoint
+### Stage 1: Extracting
+After preparation, specify the path to your `dataset`, `LLM` and `embedder` in ```./Extracting/main_extracting.py```. Then run:
 
-### 📚 **Three-Stage Novel Creation**
-1. **Extracting**: Set up your novel parameters and premise
-2. **Excelsior**: Generate and refine story outlines
-3. **Expanding**: AI-powered chapter writing with context awareness
+```
+cd ./Extracting
+python main_extracting.py
+``` 
 
-### ✨ **Smart Writing Features**
-- **Context-Aware Writing**: Maintains story consistency across chapters
-- **Entity Tracking**: Automatic character and location extraction
-- **Entity Database**: Keeps track of story elements for consistency
-- **Multiple Writing Styles**: First person (我) or third person (他/她)
-- **Real-time Progress**: Track writing progress and statistics
+It will finish the chapter extracting and recursively extracting. And relative infomation will be record in fold ```./shrinker_info```. And the corpus will be stored in the output_dir specified before. Raw novel will be divided into lots of json files, like:
 
-## Quick Start
-
-### Prerequisites
-
-You'll need a local LLM server running. Here are the most popular options:
-
-#### Option 1: Ollama (Recommended)
-```bash
-# Install Ollama
-curl -fsSL https://ollama.ai/install.sh | sh
-
-# Pull a model (Chinese-capable recommended)
-ollama pull llama3.1:8b
-ollama pull qwen2:7b
-
-# Start Ollama (runs on http://localhost:11434)
-ollama serve
+```
+- Gone with the wind
+|-- 0.json
+|-- 1.json
+|-- ...
+|-- level_0.json
+|-- level_1.json
+|-- ...
+|-- level_gonewiththewind.json
 ```
 
-#### Option 2: LM Studio
-1. Download from [LM Studio](https://lmstudio.ai/)
-2. Load a model (Qwen2, Llama3.1, or similar)
-3. Start the local server (runs on http://localhost:1234)
+The dataframe in each json file can be looked up in ```get_summary.py```.
 
-#### Option 3: Text Generation WebUI
-```bash
-git clone https://github.com/oobabooga/text-generation-webui
-cd text-generation-webui
-./start_linux.sh --api --listen-port 5000
+Then specify your `dir`, `LLM path` and `ing_info_path` in ```main_entity.py```, and run. It will use Entity Extraction method to update your corpus. Dataframe canbe looked up in ```Entity_info.py```. And the process information will be record in `ing_info_path`.
+
+
+### Stage 2: Excelsior
+After we get the summaries and entity information within a novel, we need to construct our corpus for fine-tuning the LLM later. In `./Excelsior/main_corpus_constructor.py`, specify the `LLM path`, `input_dir` and `output_dir`. Note the `input_dir` and `output_dir` should be different. Then run:
+
+```
+cd ./Excelsior
+python main_corpus_constructor.py 
+```
+The corpus will be generated in `output_dir` as a json file for each novel. And the corpus is ready for fine-tuning the LLM. Scripts for fine-tuning training can be flexibly selected according to the LLM you utilize.
+
+
+```
+ps: The names of some functions or classes in this stage use the word "expand", which is only in contrast to the "shrinker" in the name of the function in the first stage, which has nothing to do with the third stage of Expanding.
 ```
 
-### Running Ex3 Novel Writer
+### Stage 3: Expanding
+In Expanding stage, you need two LLMs. One is the fine-tuned novel writer, and the other is a general LLM for entity extraction. Specify the pathes and start.
 
-1. **Start the application:**
-   ```bash
-   npm install
-   npm run dev
-   ```
+Note that we give premises in the ```./Expanding/main_writing.py```. The premises should contain `novel_title`, `novel_tags`, and `novel_intro`. This is specified for evaluation. If you don't want to specify premises, you at least need to give novel tags and just set title and intro as `None`, the writer will automatically do the initialization.
 
-2. **Configure your LLM:**
-   - Click "Configure LLM" when you first open the app
-   - Select your LLM server type (Ollama, LM Studio, etc.)
-   - Test the connection
-   - Save settings
+Other hyperparameters can be looked up in ```./Expanding/main_writing.py```
 
-3. **Create your novel:**
-   - Set up your project with title, genre, and premise
-   - Generate AI outline or create manually
-   - Start writing and watch AI create your novel chapter by chapter
+Plus, we provide a demo for interact with the Ex3-NovelWriter. User can read the outlines it outputs and edit them if you like.
 
-## Supported LLM Servers
-
-| Server | Default URL | Notes |
-|--------|-------------|-------|
-| **Ollama** | `http://localhost:11434` | Easiest setup, great for beginners |
-| **LM Studio** | `http://localhost:1234` | User-friendly GUI |
-| **Text Generation WebUI** | `http://localhost:5000` | Advanced features, many model formats |
-| **vLLM** | `http://localhost:8000` | High performance inference |
-| **Custom** | Your URL | Any OpenAI-compatible API |
-
-## Recommended Models
-
-For best results with Chinese novel writing, we recommend:
-
-- **Qwen2:7b** or **Qwen2:14b** - Excellent Chinese language capabilities
-- **Llama3.1:8b** - Good multilingual support
-- **Yi:6b** or **Yi:34b** - Strong Chinese performance
-- **ChatGLM3:6b** - Optimized for Chinese tasks
-
-## How It Works
-
-### The Ex3 Framework
-
-1. **Extracting Stage**
-   - Extract story parameters (genre, themes, writing style)
-   - Generate or refine the initial premise
-   - Set up the foundation for your novel
-
-2. **Excelsior Stage** 
-   - Create detailed story outlines
-   - Plan chapter structure and flow
-   - Establish character and plot development
-
-3. **Expanding Stage**
-   - Generate full chapters with AI assistance
-   - Maintain story consistency with entity tracking
-   - Build comprehensive character and location databases
-
-### Entity Tracking System
-
-The system automatically:
-- Extracts characters and locations from generated content
-- Maintains a database of story elements
-- Provides context to the AI for consistent writing
-- Tracks relationships and character development
-
-## Configuration
-
-### LLM Settings
-
-The app stores your LLM configuration locally:
-- **Base URL**: Your LLM server endpoint
-- **Model**: The specific model to use
-- **API Key**: Optional, for hosted services
-
-### Writing Parameters
-
-- **Genre**: Fantasy, Sci-Fi, Romance, Mystery, etc.
-- **Writing Style**: First person (我) or Third person (他/她)
-- **Target Length**: Short, Medium, or Long novel
-- **Themes**: Optional thematic elements
-
-## Export Options
-
-- **Plain Text**: Export your complete novel as a .txt file
-- **Chapter-by-Chapter**: Individual chapter files
-- **With Metadata**: Include character and location databases
-
-## Privacy & Security
-
-- **100% Local**: All processing happens on your machine
-- **No Data Collection**: Your stories never leave your computer
-- **Offline Capable**: Works without internet connection
-- **Open Source**: Full transparency in how your data is handled
-
-## Troubleshooting
-
-### Common Issues
-
-1. **"Connection failed" error**
-   - Ensure your LLM server is running
-   - Check the URL and port number
-   - Verify the model is loaded
-
-2. **Slow generation**
-   - Try a smaller model
-   - Reduce max tokens in generation
-   - Check your hardware resources
-
-3. **Poor Chinese output**
-   - Use a Chinese-capable model (Qwen2, Yi, ChatGLM)
-   - Adjust temperature settings
-   - Provide more detailed prompts
-
-### Performance Tips
-
-- **GPU Acceleration**: Use CUDA/Metal for faster inference
-- **Model Size**: Balance quality vs. speed based on your hardware
-- **Context Length**: Longer context = better consistency but slower generation
-
-## Contributing
-
-This is a web implementation of the original Ex3 research. Contributions welcome!
-
-## License
-
-Based on the Ex3 research paper: [Ex3: Automatic Novel Writing by Extracting, Excelsior and Expanding](https://arxiv.org/pdf/2408.08506)
 
 ## Citation
-
-```bibtex
+```
 @inproceedings{DBLP:conf/acl/LeiGHZZPL024,
   author       = {Huang Lei and
                   Jiaming Guo and
