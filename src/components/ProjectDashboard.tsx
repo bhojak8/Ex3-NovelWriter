@@ -148,7 +148,7 @@ export default function ProjectDashboard({ onCreateNew, onSelectProject }: Proje
                       <li>You'll see a security warning - this is normal for self-signed certificates</li>
                       <li>Click "Advanced" or "Show details" on the warning page</li>
                       <li>Click "Proceed to localhost (unsafe)" or "Accept the risk and continue"</li>
-                      <li>You should see a JSON response like {"status": "healthy"}</li>
+                      <li>You should see a JSON response like &lbrace;"status": "healthy"&rbrace;</li>
                       <li>Return to this tab and click "I've Accepted the Certificate"</li>
                     </ol>
                     
