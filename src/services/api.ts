@@ -75,21 +75,28 @@ class APIService {
   private workingURL: string | null = null;
 
   constructor() {
-    // Use the environment variable for API URL, with HTTP fallback
-    this.baseURL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+    // Use the environment variable for API URL, with proper fallback order
+    const envURL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+    this.baseURL = envURL;
+    
+    // Prioritize HTTP over HTTPS for local development to avoid SSL issues
     this.fallbackURLs = [
-      this.baseURL,
       'http://localhost:8000',
-      'https://localhost:8000',
       'http://127.0.0.1:8000',
+      'https://localhost:8000',
       'https://127.0.0.1:8000'
     ];
+    
+    // If environment specifies a specific URL, try it first
+    if (envURL && !this.fallbackURLs.includes(envURL)) {
+      this.fallbackURLs.unshift(envURL);
+    }
   }
 
   private async testConnection(url: string): Promise<boolean> {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+      const timeoutId = setTimeout(() => controller.abort(), 3000); // Reduced timeout for faster fallback
       
       const response = await fetch(`${url}/health`, {
         method: 'GET',
@@ -97,7 +104,6 @@ class APIService {
           'Content-Type': 'application/json',
         },
         signal: controller.signal,
-        // Add these options to handle SSL issues
         mode: 'cors',
         credentials: 'omit'
       });
@@ -112,7 +118,14 @@ class APIService {
 
   private async findWorkingURL(): Promise<string> {
     if (this.workingURL && this.connectionTested) {
-      return this.workingURL;
+      // Re-test the working URL to ensure it's still working
+      if (await this.testConnection(this.workingURL)) {
+        return this.workingURL;
+      } else {
+        // Reset if the previously working URL is no longer working
+        this.workingURL = null;
+        this.connectionTested = false;
+      }
     }
 
     // Test all URLs to find a working one
@@ -126,14 +139,30 @@ class APIService {
       }
     }
 
-    // If no URL works, throw a descriptive error
-    throw new Error(
-      'Backend connection failed. Please ensure:\n\n' +
-      '1. The backend server is running\n' +
-      '2. If using HTTPS, visit https://localhost:8000 in your browser and accept the SSL certificate\n' +
-      '3. Check that the server is accessible on the configured port\n\n' +
-      `Attempted URLs: ${this.fallbackURLs.join(', ')}`
-    );
+    // If no URL works, provide specific guidance based on the attempted URLs
+    const httpsURLs = this.fallbackURLs.filter(url => url.startsWith('https://'));
+    const hasHTTPS = httpsURLs.length > 0;
+    
+    let errorMessage = 'Backend connection failed. Please ensure:\n\n';
+    errorMessage += '1. The backend server is running\n';
+    
+    if (hasHTTPS) {
+      errorMessage += '2. If using HTTPS, visit https://localhost:8000 in your browser and accept the SSL certificate\n';
+      errorMessage += '3. Check that the server is accessible on the configured port\n\n';
+      errorMessage += 'SSL Certificate Issue: If you see HTTPS URLs in the attempted list, you need to manually accept the self-signed certificate:\n';
+      errorMessage += '• Open https://localhost:8000 in a new browser tab\n';
+      errorMessage += '• Click "Advanced" or "Show details" on the security warning\n';
+      errorMessage += '• Click "Proceed to localhost (unsafe)" or "Accept the risk and continue"\n';
+      errorMessage += '• You should see a JSON response like {"status": "healthy"}\n';
+      errorMessage += '• Return to this application and try again\n\n';
+    } else {
+      errorMessage += '2. Check that the server is accessible on the configured port\n';
+      errorMessage += '3. Verify the VITE_API_URL environment variable is correct\n\n';
+    }
+    
+    errorMessage += `Attempted URLs: ${this.fallbackURLs.join(', ')}`;
+    
+    throw new Error(errorMessage);
   }
 
   private async fetchWithFallback(endpoint: string, options: RequestInit = {}): Promise<Response> {
@@ -162,7 +191,7 @@ class APIService {
       
       return response;
     } catch (error) {
-      // Reset connection status on error
+      // Reset connection status on error to force re-testing
       this.connectionTested = false;
       this.workingURL = null;
       
@@ -170,6 +199,15 @@ class APIService {
         if (error.name === 'AbortError') {
           throw new Error('Request timeout - the server may be overloaded or unreachable');
         }
+        
+        // Check if it's an SSL/certificate error
+        if (error.message.includes('Failed to fetch') || 
+            error.message.includes('net::ERR_CERT') ||
+            error.message.includes('SSL') ||
+            error.message.includes('certificate')) {
+          throw new Error('SSL certificate error - please visit https://localhost:8000 in your browser and accept the certificate, then try again');
+        }
+        
         throw new Error(`Backend request failed: ${error.message}`);
       }
       throw error;
