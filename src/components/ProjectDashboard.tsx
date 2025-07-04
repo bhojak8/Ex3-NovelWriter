@@ -4,7 +4,7 @@ import {
   BookOpen, Plus, Search, Filter, Grid, List, Clock, 
   TrendingUp, Star, Archive, Trash2, Download, Share2,
   Calendar, User, Tag, BarChart3, AlertCircle, Wifi, WifiOff,
-  RefreshCw, ExternalLink
+  RefreshCw, ExternalLink, Shield, CheckCircle
 } from 'lucide-react';
 import { Button } from './ui/Button';
 import { Input } from './ui/Input';
@@ -25,6 +25,7 @@ export default function ProjectDashboard({ onCreateNew, onSelectProject }: Proje
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isRetrying, setIsRetrying] = useState(false);
+  const [sslCertificateAccepted, setSslCertificateAccepted] = useState(false);
 
   useEffect(() => {
     loadProjects();
@@ -35,6 +36,7 @@ export default function ProjectDashboard({ onCreateNew, onSelectProject }: Proje
       setLoadError(null);
       const allProjects = await getAllProjects();
       setProjects(allProjects);
+      setSslCertificateAccepted(true); // If we get here, SSL is working
     } catch (err) {
       console.error('Failed to load projects:', err);
       const errorMessage = err instanceof Error ? err.message : 'Failed to load projects';
@@ -65,6 +67,11 @@ export default function ProjectDashboard({ onCreateNew, onSelectProject }: Proje
   const openBackendURL = () => {
     const backendURL = import.meta.env.VITE_API_URL || 'https://localhost:8000';
     window.open(backendURL, '_blank');
+  };
+
+  const handleCertificateAccepted = () => {
+    setSslCertificateAccepted(true);
+    handleRetryConnection();
   };
 
   const filteredProjects = projects
@@ -108,7 +115,7 @@ export default function ProjectDashboard({ onCreateNew, onSelectProject }: Proje
   const renderConnectionError = () => {
     if (!loadError) return null;
 
-    const isSSLError = loadError.includes('Failed to fetch') || loadError.includes('SSL') || loadError.includes('certificate');
+    const isSSLError = loadError.includes('Failed to fetch') || loadError.includes('SSL') || loadError.includes('certificate') || loadError.includes('Backend connection failed');
     const isTimeoutError = loadError.includes('timeout') || loadError.includes('AbortError');
     const isConnectionError = loadError.includes('Backend connection failed');
 
@@ -120,46 +127,65 @@ export default function ProjectDashboard({ onCreateNew, onSelectProject }: Proje
             <h3 className="text-sm font-medium text-red-800 mb-2">Backend Connection Issue</h3>
             
             {isSSLError && (
-              <div className="space-y-3">
+              <div className="space-y-4">
                 <p className="text-sm text-red-700">
                   The backend server is using HTTPS with a self-signed certificate that your browser doesn't trust.
                 </p>
-                <div className="bg-red-100 p-3 rounded border border-red-200">
-                  <p className="text-sm font-medium text-red-800 mb-2">To fix this:</p>
-                  <ol className="text-sm text-red-700 space-y-1 list-decimal list-inside">
-                    <li>Click the button below to open the backend URL in a new tab</li>
-                    <li>Accept the security warning and proceed to the site</li>
-                    <li>Return to this page and click "Retry Connection"</li>
-                  </ol>
+                
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                  <div className="flex items-center space-x-2 mb-3">
+                    <Shield className="h-5 w-5 text-amber-600" />
+                    <h4 className="font-medium text-amber-800">SSL Certificate Setup Required</h4>
+                  </div>
+                  
+                  <div className="space-y-3">
+                    <p className="text-sm text-amber-700">
+                      To establish a secure connection, you need to accept the self-signed certificate:
+                    </p>
+                    
+                    <ol className="text-sm text-amber-700 space-y-2 list-decimal list-inside ml-4">
+                      <li>Click "Open Backend URL" below to open the backend in a new tab</li>
+                      <li>You'll see a security warning - this is normal for self-signed certificates</li>
+                      <li>Click "Advanced" or "Show details" on the warning page</li>
+                      <li>Click "Proceed to localhost (unsafe)" or "Accept the risk and continue"</li>
+                      <li>You should see a JSON response like {"status": "healthy"}</li>
+                      <li>Return to this tab and click "I've Accepted the Certificate"</li>
+                    </ol>
+                    
+                    <div className="flex space-x-3 mt-4">
+                      <Button 
+                        onClick={openBackendURL}
+                        variant="outline"
+                        size="sm"
+                        className="border-amber-300 text-amber-700 hover:bg-amber-100"
+                      >
+                        <ExternalLink className="h-4 w-4 mr-2" />
+                        Open Backend URL
+                      </Button>
+                      
+                      <Button 
+                        onClick={handleCertificateAccepted}
+                        disabled={isRetrying}
+                        size="sm"
+                        className="bg-green-600 hover:bg-green-700"
+                      >
+                        <CheckCircle className="h-4 w-4 mr-2" />
+                        I've Accepted the Certificate
+                      </Button>
+                    </div>
+                  </div>
                 </div>
-                <div className="flex space-x-3">
-                  <Button 
-                    onClick={openBackendURL}
-                    variant="outline"
-                    size="sm"
-                    className="border-red-300 text-red-700 hover:bg-red-100"
-                  >
-                    <ExternalLink className="h-4 w-4 mr-2" />
-                    Open Backend URL
-                  </Button>
-                  <Button 
-                    onClick={handleRetryConnection}
-                    disabled={isRetrying}
-                    size="sm"
-                    className="bg-red-600 hover:bg-red-700"
-                  >
-                    {isRetrying ? (
-                      <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                    ) : (
-                      <RefreshCw className="h-4 w-4 mr-2" />
-                    )}
-                    Retry Connection
-                  </Button>
+                
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                  <p className="text-xs text-blue-700">
+                    <strong>Why is this needed?</strong> The backend uses HTTPS for security, but generates its own certificate. 
+                    Browsers require manual approval for self-signed certificates to protect against malicious sites.
+                  </p>
                 </div>
               </div>
             )}
 
-            {isTimeoutError && (
+            {isTimeoutError && !isSSLError && (
               <div className="space-y-3">
                 <p className="text-sm text-red-700">
                   The connection to the backend server timed out. The server may be overloaded or unreachable.
@@ -206,7 +232,7 @@ export default function ProjectDashboard({ onCreateNew, onSelectProject }: Proje
                   )}
                   Retry Connection
                 </Button>
-              </div>
+                </div>
             )}
 
             <p className="text-xs text-red-600 mt-3">
