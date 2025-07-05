@@ -115,9 +115,9 @@ export default function ProjectDashboard({ onCreateNew, onSelectProject }: Proje
   const renderConnectionError = () => {
     if (!loadError) return null;
 
-    const isSSLError = loadError.includes('Failed to fetch') || loadError.includes('SSL') || loadError.includes('certificate') || loadError.includes('Backend connection failed');
+    const isSSLError = loadError.includes('self-signed SSL certificate') || loadError.includes('SSL certificate') || loadError.includes('security warning');
     const isTimeoutError = loadError.includes('timeout') || loadError.includes('AbortError');
-    const isConnectionError = loadError.includes('Backend connection failed');
+    const isConnectionError = loadError.includes('Backend connection failed') && !isSSLError;
 
     return (
       <div className="mb-6 p-6 bg-red-50 border border-red-200 rounded-lg">
@@ -126,10 +126,14 @@ export default function ProjectDashboard({ onCreateNew, onSelectProject }: Proje
           <div className="flex-1">
             <h3 className="text-sm font-medium text-red-800 mb-2">Backend Connection Issue</h3>
             
+            <div className="mb-4 p-3 bg-gray-50 border border-gray-200 rounded text-sm text-gray-700">
+              <strong>Error Details:</strong> {loadError}
+            </div>
+            
             {isSSLError && (
               <div className="space-y-4">
                 <p className="text-sm text-red-700">
-                  The backend server is using HTTPS with a self-signed certificate that your browser doesn't trust.
+                  The backend server is using HTTPS with a self-signed SSL certificate that your browser doesn't trust.
                 </p>
                 
                 <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
@@ -149,7 +153,7 @@ export default function ProjectDashboard({ onCreateNew, onSelectProject }: Proje
                       <li>Click "Advanced" or "Show details" on the warning page</li>
                       <li>Click "Proceed to localhost (unsafe)" or "Accept the risk and continue"</li>
                       <li>You should see a JSON response like &lbrace;"status": "healthy"&rbrace;</li>
-                      <li>Return to this tab and click "I've Accepted the Certificate"</li>
+                      <li>Return to this tab and click "Retry Connection"</li>
                     </ol>
                     
                     <div className="flex space-x-3 mt-4">
@@ -164,13 +168,17 @@ export default function ProjectDashboard({ onCreateNew, onSelectProject }: Proje
                       </Button>
                       
                       <Button 
-                        onClick={handleCertificateAccepted}
+                        onClick={handleRetryConnection}
                         disabled={isRetrying}
                         size="sm"
                         className="bg-green-600 hover:bg-green-700"
                       >
-                        <CheckCircle className="h-4 w-4 mr-2" />
-                        I've Accepted the Certificate
+                        {isRetrying ? (
+                          <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <RefreshCw className="h-4 w-4 mr-2" />
+                        )}
+                        Retry Connection
                       </Button>
                     </div>
                   </div>
@@ -209,14 +217,15 @@ export default function ProjectDashboard({ onCreateNew, onSelectProject }: Proje
             {isConnectionError && !isSSLError && !isTimeoutError && (
               <div className="space-y-3">
                 <p className="text-sm text-red-700">
-                  Unable to connect to the backend server. Please ensure the server is running.
+                  Unable to connect to the backend server. Please check the following:
                 </p>
-                <div className="text-xs text-red-600 bg-red-100 p-2 rounded">
-                  <p className="font-medium mb-1">Troubleshooting steps:</p>
+                <div className="text-sm text-red-600 bg-red-100 p-3 rounded">
+                  <p className="font-medium mb-2">Troubleshooting steps:</p>
                   <ul className="list-disc list-inside space-y-1">
                     <li>Check if the backend server is running on the configured port</li>
                     <li>Verify the VITE_API_URL environment variable is correct</li>
                     <li>Ensure no firewall is blocking the connection</li>
+                    <li>Try starting the backend server if it's not running</li>
                   </ul>
                 </div>
                 <Button 
@@ -232,7 +241,7 @@ export default function ProjectDashboard({ onCreateNew, onSelectProject }: Proje
                   )}
                   Retry Connection
                 </Button>
-                </div>
+              </div>
             )}
 
             <p className="text-xs text-red-600 mt-3">
