@@ -73,13 +73,14 @@ class APIService {
   private fallbackURLs: string[];
   private connectionTested: boolean = false;
   private workingURL: string | null = null;
+  private lastError: string | null = null;
 
   constructor() {
     // Use the environment variable for API URL, with proper fallback order
     const envURL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
     this.baseURL = envURL;
     
-    // Prioritize HTTP over HTTPS for local development to avoid SSL issues
+    // Try HTTP first to avoid SSL issues, then HTTPS
     this.fallbackURLs = [
       'http://localhost:8000',
       'http://127.0.0.1:8000',
@@ -96,7 +97,7 @@ class APIService {
   private async testConnection(url: string): Promise<boolean> {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3000); // Reduced timeout for faster fallback
+      const timeoutId = setTimeout(() => controller.abort(), 5000); // Increased timeout for better reliability
       
       const response = await fetch(`${url}/health`, {
         method: 'GET',
@@ -111,6 +112,8 @@ class APIService {
       clearTimeout(timeoutId);
       return response.ok;
     } catch (error) {
+      // Store the last error for better error reporting
+      this.lastError = error instanceof Error ? error.message : 'Unknown error';
       console.warn(`Connection test failed for ${url}:`, error);
       return false;
     }
@@ -128,6 +131,10 @@ class APIService {
       }
     }
 
+    let httpFailed = false;
+    let httpsFailed = false;
+    let sslError = false;
+
     // Test all URLs to find a working one
     for (const url of this.fallbackURLs) {
       console.log(`Testing connection to: ${url}`);
@@ -136,31 +143,58 @@ class APIService {
         this.workingURL = url;
         this.connectionTested = true;
         return url;
+      } else {
+        // Track what types of connections failed
+        if (url.startsWith('http://')) {
+          httpFailed = true;
+        } else if (url.startsWith('https://')) {
+          httpsFailed = true;
+          // Check if the error suggests SSL issues
+          if (this.lastError && (
+            this.lastError.includes('Failed to fetch') ||
+            this.lastError.includes('SSL') ||
+            this.lastError.includes('certificate') ||
+            this.lastError.includes('net::ERR_CERT') ||
+            this.lastError.includes('CERT_')
+          )) {
+            sslError = true;
+          }
+        }
       }
     }
 
-    // If no URL works, provide specific guidance based on the attempted URLs
-    const httpsURLs = this.fallbackURLs.filter(url => url.startsWith('https://'));
-    const hasHTTPS = httpsURLs.length > 0;
-    
-    let errorMessage = 'Backend connection failed. Please ensure:\n\n';
-    errorMessage += '1. The backend server is running\n';
-    
-    if (hasHTTPS) {
-      errorMessage += '2. If using HTTPS, visit https://localhost:8000 in your browser and accept the SSL certificate\n';
-      errorMessage += '3. Check that the server is accessible on the configured port\n\n';
-      errorMessage += 'SSL Certificate Issue: If you see HTTPS URLs in the attempted list, you need to manually accept the self-signed certificate:\n';
-      errorMessage += '• Open https://localhost:8000 in a new browser tab\n';
-      errorMessage += '• Click "Advanced" or "Show details" on the security warning\n';
-      errorMessage += '• Click "Proceed to localhost (unsafe)" or "Accept the risk and continue"\n';
-      errorMessage += '• You should see a JSON response like {"status": "healthy"}\n';
-      errorMessage += '• Return to this application and try again\n\n';
+    // Generate specific error message based on what failed
+    let errorMessage = 'Backend connection failed. ';
+
+    if (httpFailed && httpsFailed && sslError) {
+      errorMessage += 'The backend server appears to be running with HTTPS and a self-signed SSL certificate that your browser does not trust.\n\n';
+      errorMessage += 'To fix this:\n';
+      errorMessage += '1. Open https://localhost:8000 in a new browser tab\n';
+      errorMessage += '2. You will see a security warning - this is normal for self-signed certificates\n';
+      errorMessage += '3. Click "Advanced" or "Show details" on the warning page\n';
+      errorMessage += '4. Click "Proceed to localhost (unsafe)" or "Accept the risk and continue"\n';
+      errorMessage += '5. You should see a JSON response like {"status": "healthy"}\n';
+      errorMessage += '6. Return to this application and refresh the page\n\n';
+      errorMessage += 'This is a one-time setup required for self-signed certificates.';
+    } else if (httpFailed && !httpsFailed) {
+      errorMessage += 'HTTP connections failed but HTTPS might be available. Please ensure:\n\n';
+      errorMessage += '1. The backend server is running\n';
+      errorMessage += '2. The server is configured to accept HTTP connections\n';
+      errorMessage += '3. No firewall is blocking the connection\n';
+      errorMessage += '4. The port 8000 is available and not in use by another service';
     } else {
-      errorMessage += '2. Check that the server is accessible on the configured port\n';
-      errorMessage += '3. Verify the VITE_API_URL environment variable is correct\n\n';
+      errorMessage += 'Please ensure:\n\n';
+      errorMessage += '1. The backend server is running\n';
+      errorMessage += '2. The server is accessible on the configured port\n';
+      errorMessage += '3. No firewall is blocking the connection\n';
+      errorMessage += '4. The VITE_API_URL environment variable is correct if set';
     }
+
+    errorMessage += `\n\nAttempted URLs: ${this.fallbackURLs.join(', ')}`;
     
-    errorMessage += `Attempted URLs: ${this.fallbackURLs.join(', ')}`;
+    if (this.lastError) {
+      errorMessage += `\nLast error: ${this.lastError}`;
+    }
     
     throw new Error(errorMessage);
   }
@@ -198,14 +232,6 @@ class APIService {
       if (error instanceof Error) {
         if (error.name === 'AbortError') {
           throw new Error('Request timeout - the server may be overloaded or unreachable');
-        }
-        
-        // Check if it's an SSL/certificate error
-        if (error.message.includes('Failed to fetch') || 
-            error.message.includes('net::ERR_CERT') ||
-            error.message.includes('SSL') ||
-            error.message.includes('certificate')) {
-          throw new Error('SSL certificate error - please visit https://localhost:8000 in your browser and accept the certificate, then try again');
         }
         
         throw new Error(`Backend request failed: ${error.message}`);
