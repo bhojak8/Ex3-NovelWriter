@@ -55,10 +55,13 @@ export default function ProjectDashboard({ onCreateNew, onSelectProject }: Proje
   const handleRetryConnection = async () => {
     setIsRetrying(true);
     try {
+      setLoadError(null);
       await checkConnection();
       await loadProjects();
     } catch (err) {
       console.error('Retry failed:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Connection retry failed';
+      setLoadError(errorMessage);
     } finally {
       setIsRetrying(false);
     }

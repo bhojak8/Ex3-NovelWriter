@@ -29,9 +29,10 @@ export function useNovelWriter() {
       const connected = await apiService.checkHealth();
       setIsConnected(connected);
       return connected;
-    } catch {
+    } catch (err) {
       setIsConnected(false);
-      return false;
+      // Re-throw the error so it can be handled by the calling component
+      throw err;
     }
   }, []);
 
