@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
-import { apiService, localLLMService, NovelProject, WritingSession } from '../services/api';
+import { apiService, NovelProject, WritingSession } from '../services/api';
+import { localLLMService } from '../services/localLLM';
 
 export type LLMProvider = 'ex3-api' | 'local-llm';
 
