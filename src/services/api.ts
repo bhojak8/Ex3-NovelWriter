@@ -78,12 +78,12 @@ class APIService {
     return response;
   }
 
-  async getProjects() {
+  async getAllProjects() {
     try {
       const response = await this.makeRequest('/api/projects');
       return await response.json();
     } catch (error) {
-      console.error('Failed to get projects:', error);
+      console.error('Failed to get all projects:', error);
       throw error;
     }
   }
@@ -175,12 +175,12 @@ class APIService {
     }
   }
 
-  async getHealth() {
+  async checkHealth() {
     try {
       const response = await this.makeRequest('/health');
       return await response.json();
     } catch (error) {
-      console.error('Failed to get health status:', error);
+      console.error('Failed to check health status:', error);
       throw error;
     }
   }
