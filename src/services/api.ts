@@ -105,22 +105,6 @@ class APIService {
   getPrimaryBackendUrl(): string {
     return API_BASE_URLS[0]; // Return the primary HTTPS localhost URL
   }
-}
-    
-    const response = await fetch(`${baseUrl}${endpoint}`, {
-      ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    return response;
-  }
 
   async getAllProjects() {
     try {
