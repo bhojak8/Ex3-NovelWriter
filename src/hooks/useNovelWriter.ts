@@ -27,9 +27,9 @@ export function useNovelWriter() {
   // Check API connectivity
   const checkConnection = useCallback(async () => {
     try {
-      const connected = await apiService.checkHealth();
-      setIsConnected(connected);
-      return connected;
+      const healthResult = await apiService.checkHealth();
+      setIsConnected(true);
+      return true;
     } catch (err) {
       setIsConnected(false);
       // Re-throw the error so it can be handled by the calling component

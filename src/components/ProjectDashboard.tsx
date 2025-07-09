@@ -11,6 +11,8 @@ import { Input } from './ui/Input';
 import { Select } from './ui/Select';
 import { useNovelWriter } from '../hooks/useNovelWriter';
 
+import { apiService } from '../services/api';
+
 interface ProjectDashboardProps {
   onCreateNew: () => void;
   onSelectProject: (project: any) => void;
@@ -68,7 +70,7 @@ export default function ProjectDashboard({ onCreateNew, onSelectProject }: Proje
   };
 
   const openBackendURL = () => {
-    const backendURL = import.meta.env.VITE_API_URL || 'https://localhost:8000';
+    const backendURL = apiService.getPrimaryBackendUrl();
     window.open(backendURL, '_blank');
   };
 
@@ -118,9 +120,10 @@ export default function ProjectDashboard({ onCreateNew, onSelectProject }: Proje
   const renderConnectionError = () => {
     if (!loadError) return null;
 
-    const isSSLError = loadError.includes('self-signed SSL certificate') || loadError.includes('SSL certificate') || loadError.includes('security warning');
-    const isTimeoutError = loadError.includes('timeout') || loadError.includes('AbortError');
-    const isConnectionError = loadError.includes('Backend connection failed') && !isSSLError;
+    const isSSLError = loadError.includes('SSL certificate needs to be accepted');
+    const isTimeoutError = loadError.includes('timeout') || loadError.includes('Request timeout');
+    const isNetworkError = loadError.includes('Network connection failed');
+    const isConnectionError = loadError.includes('Backend connection failed') && !isSSLError && !isTimeoutError && !isNetworkError;
 
     return (
       <div className="mb-6 p-6 bg-red-50 border border-red-200 rounded-lg">
@@ -128,10 +131,6 @@ export default function ProjectDashboard({ onCreateNew, onSelectProject }: Proje
           <AlertCircle className="h-6 w-6 text-red-600 mt-0.5 flex-shrink-0" />
           <div className="flex-1">
             <h3 className="text-sm font-medium text-red-800 mb-2">Backend Connection Issue</h3>
-            
-            <div className="mb-4 p-3 bg-gray-50 border border-gray-200 rounded text-sm text-gray-700">
-              <strong>Error Details:</strong> {loadError}
-            </div>
             
             {isSSLError && (
               <div className="space-y-4">
@@ -217,7 +216,37 @@ export default function ProjectDashboard({ onCreateNew, onSelectProject }: Proje
               </div>
             )}
 
-            {isConnectionError && !isSSLError && !isTimeoutError && (
+            {isNetworkError && !isSSLError && !isTimeoutError && (
+              <div className="space-y-3">
+                <p className="text-sm text-red-700">
+                  Network connection failed. The backend server may not be running.
+                </p>
+                <div className="text-sm text-red-600 bg-red-100 p-3 rounded">
+                  <p className="font-medium mb-2">Troubleshooting steps:</p>
+                  <ul className="list-disc list-inside space-y-1">
+                    <li>Check if the backend server is running</li>
+                    <li>Verify the server is accessible at the expected port</li>
+                    <li>Ensure no firewall is blocking the connection</li>
+                    <li>Try restarting the backend server</li>
+                  </ul>
+                </div>
+                <Button 
+                  onClick={handleRetryConnection}
+                  disabled={isRetrying}
+                  size="sm"
+                  className="bg-red-600 hover:bg-red-700"
+                >
+                  {isRetrying ? (
+                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                  )}
+                  Retry Connection
+                </Button>
+              </div>
+            )}
+
+            {isConnectionError && !isSSLError && !isTimeoutError && !isNetworkError && (
               <div className="space-y-3">
                 <p className="text-sm text-red-700">
                   Unable to connect to the backend server. Please check the following:
@@ -246,6 +275,10 @@ export default function ProjectDashboard({ onCreateNew, onSelectProject }: Proje
                 </Button>
               </div>
             )}
+
+            <div className="mt-4 p-3 bg-gray-50 border border-gray-200 rounded text-sm text-gray-700">
+              <strong>Technical Details:</strong> {loadError}
+            </div>
 
             <p className="text-xs text-red-600 mt-3">
               Running in offline mode using local storage. Some features may be limited.

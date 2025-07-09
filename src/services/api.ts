@@ -47,21 +47,65 @@ class APIService {
 
     // If no URL works, throw a detailed error
     throw new Error(
-      'Backend connection failed. The backend server appears to be running with HTTPS and a self-signed SSL certificate that your browser does not trust.\n\n' +
-      'To fix this:\n' +
-      '1. Open https://localhost:8000 in a new browser tab\n' +
-      '2. You will see a security warning - this is normal for self-signed certificates\n' +
-      '3. Click "Advanced" or "Show details" on the warning page\n' +
-      '4. Click "Proceed to localhost (unsafe)" or "Accept the risk and continue"\n' +
-      '5. You should see a JSON response like {"status": "healthy"}\n' +
-      '6. Return to this application and refresh the page\n\n' +
-      'This is a one-time setup required for self-signed certificates.\n\n' +
-      `Attempted URLs: ${API_BASE_URLS.join(', ')}`
+      `Backend connection failed - SSL certificate needs to be accepted. Attempted URLs: ${API_BASE_URLS.join(', ')}`
     );
   }
 
   private async makeRequest(endpoint: string, options: RequestInit = {}): Promise<Response> {
-    const baseUrl = await this.findWorkingBaseUrl();
+    try {
+      const baseUrl = await this.findWorkingBaseUrl();
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+      
+      const response = await fetch(`${baseUrl}${endpoint}`, {
+        ...options,
+        headers: {
+          'Content-Type': 'application/json',
+          ...options.headers,
+        },
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      return response;
+    } catch (error) {
+      if (error instanceof Error) {
+        if (error.name === 'AbortError') {
+          throw new Error('Request timeout - backend server may be overloaded or unreachable');
+        }
+        if (error.message.includes('SSL certificate') || error.message.includes('self-signed')) {
+          throw new Error('SSL certificate needs to be accepted in browser');
+        }
+        if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+          throw new Error('Network connection failed - backend server may not be running');
+        }
+      }
+      throw error;
+    }
+  }
+
+  async checkHealth() {
+    try {
+      const response = await this.makeRequest('/health');
+      const result = await response.json();
+      return result;
+    } catch (error) {
+      // Re-throw with more specific error context
+      throw error;
+    }
+  }
+
+  // Method to get the primary backend URL for user instructions
+  getPrimaryBackendUrl(): string {
+    return API_BASE_URLS[0]; // Return the primary HTTPS localhost URL
+  }
+}
     
     const response = await fetch(`${baseUrl}${endpoint}`, {
       ...options,
