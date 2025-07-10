@@ -82,7 +82,7 @@ class APIService {
 
     // If no URL works, throw a detailed error
     throw new Error(
-      `SSL certificate needs to be accepted in browser`
+      `Backend server is not reachable. Please ensure the backend server is running on one of the configured ports.`
     );
   }
 
@@ -118,9 +118,6 @@ class APIService {
           throw new Error('SSL certificate needs to be accepted in browser');
         }
         if (error.message.includes('certificate') || error.message.includes('self-signed') || error.message.includes('NET::ERR_CERT')) {
-          throw new Error('SSL certificate needs to be accepted in browser');
-        }
-        if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError') || error.message.includes('TypeError')) {
           throw new Error('SSL certificate needs to be accepted in browser');
         }
       }
