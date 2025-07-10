@@ -59,6 +59,21 @@ class APIService {
       clearTimeout(timeoutId);
       return response.ok;
     } catch (error) {
+      // Re-throw specific errors for better error handling upstream
+      if (error instanceof Error) {
+        if (error.name === 'AbortError') {
+          throw new Error(`Connection timeout to ${baseUrl} - server may be overloaded or unreachable`);
+        }
+        if (error.message.includes('certificate') || error.message.includes('self-signed') || error.message.includes('NET::ERR_CERT')) {
+          throw new Error(`SSL certificate error for ${baseUrl} - certificate needs to be accepted in browser`);
+        }
+        if (error.message.includes('ECONNREFUSED') || error.message.includes('Failed to fetch')) {
+          throw new Error(`Connection refused to ${baseUrl} - server may not be running`);
+        }
+        if (error.message.includes('NetworkError') || error.message.includes('network')) {
+          throw new Error(`Network error connecting to ${baseUrl} - check your internet connection`);
+        }
+      }
       return false;
     }
   }
@@ -66,23 +81,44 @@ class APIService {
   private async findWorkingBaseUrl(): Promise<string> {
     if (activeBaseUrl) {
       // Test if the active URL still works
-      if (await this.testConnection(activeBaseUrl)) {
-        return activeBaseUrl;
+      try {
+        if (await this.testConnection(activeBaseUrl)) {
+          return activeBaseUrl;
+        }
+      } catch (error) {
+        // If there's a specific error, propagate it
+        if (error instanceof Error && !error.message.includes('Connection refused')) {
+          throw error;
+        }
       }
       // Reset if it doesn't work anymore
       activeBaseUrl = null;
     }
 
+    let lastSpecificError: Error | null = null;
+    
     for (const baseUrl of API_BASE_URLS) {
-      if (await this.testConnection(baseUrl)) {
-        activeBaseUrl = baseUrl;
-        return baseUrl;
+      try {
+        if (await this.testConnection(baseUrl)) {
+          activeBaseUrl = baseUrl;
+          return baseUrl;
+        }
+      } catch (error) {
+        // Store specific errors (not connection refused) to potentially throw later
+        if (error instanceof Error && !error.message.includes('Connection refused')) {
+          lastSpecificError = error;
+        }
       }
+    }
+
+    // If we have a specific error (like SSL or timeout), throw that instead of generic message
+    if (lastSpecificError) {
+      throw lastSpecificError;
     }
 
     // If no URL works, throw a detailed error
     throw new Error(
-      `Backend server is not reachable. Please ensure the backend server is running on one of the configured ports.`
+      `Backend server is not reachable on any configured port (${API_BASE_URLS.join(', ')}). Please ensure the backend server is running. If using HTTPS, you may need to accept the SSL certificate by visiting ${this.getPrimaryBackendUrl()}/health directly in your browser.`
     );
   }
 
