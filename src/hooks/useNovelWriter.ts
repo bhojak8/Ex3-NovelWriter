@@ -68,7 +68,8 @@ export function useNovelWriter() {
       return await apiService.getAllProjects();
     } catch (err) {
       console.error('Failed to get projects:', err);
-      return localProjects; // Fallback to local
+      // Re-throw the original error to preserve SSL certificate error messages
+      throw err;
     }
   }, [llmProvider, localProjects]);
 
