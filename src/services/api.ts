@@ -79,7 +79,13 @@ class APIService {
         if (error.name === 'AbortError') {
           throw new Error('Request timeout - backend server may be overloaded or unreachable');
         }
-        if (error.message.includes('SSL certificate') || error.message.includes('self-signed')) {
+        if (error.message.includes('SSL certificate') || 
+            error.message.includes('self-signed') ||
+            error.message.includes('ERR_CERT_AUTHORITY_INVALID') ||
+            error.message.includes('ERR_CERT_COMMON_NAME_INVALID') ||
+            error.message.includes('ERR_CERT_INVALID') ||
+            error.message.includes('certificate') ||
+            (error.message.includes('Failed to fetch') && activeBaseUrl && activeBaseUrl.startsWith('https'))) {
           throw new Error('SSL certificate needs to be accepted in browser');
         }
         if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
@@ -203,15 +209,6 @@ class APIService {
     }
   }
 
-  async checkHealth() {
-    try {
-      const response = await this.makeRequest('/health');
-      return await response.json();
-    } catch (error) {
-      console.error('Failed to check health status:', error);
-      throw error;
-    }
-  }
 
   // Get the currently active base URL for display purposes
   getActiveBaseUrl(): string | null {
