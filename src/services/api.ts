@@ -7,6 +7,41 @@ const API_BASE_URLS = [
 
 let activeBaseUrl: string | null = null;
 
+export interface NovelProject {
+  id: string;
+  title: string;
+  genre: string;
+  premise: string;
+  outline: string[];
+  chapters: Chapter[];
+  status: 'planning' | 'writing' | 'completed' | 'paused';
+  progress: number;
+  writingStyle: string;
+  targetLength: 'short' | 'medium' | 'long';
+  themes?: string;
+  createdAt: string;
+  modifiedAt: string;
+  wordCount: number;
+}
+
+export interface Chapter {
+  id: number;
+  title: string;
+  content: string;
+  summary: string;
+  entities: any;
+  wordCount: number;
+}
+
+export interface WritingSession {
+  id: string;
+  projectId: string;
+  currentChapter: number;
+  isActive: boolean;
+  generatedContent: string;
+  entityDatabase: any;
+}
+
 class APIService {
   private async testConnection(baseUrl: string): Promise<boolean> {
     try {
@@ -47,7 +82,7 @@ class APIService {
 
     // If no URL works, throw a detailed error
     throw new Error(
-      `Backend connection failed - SSL certificate needs to be accepted. Attempted URLs: ${API_BASE_URLS.join(', ')}`
+      `SSL certificate needs to be accepted in browser`
     );
   }
 
@@ -79,17 +114,14 @@ class APIService {
         if (error.name === 'AbortError') {
           throw new Error('Request timeout - backend server may be overloaded or unreachable');
         }
-        if (error.message.includes('SSL certificate') || 
-            error.message.includes('self-signed') ||
-            error.message.includes('ERR_CERT_AUTHORITY_INVALID') ||
-            error.message.includes('ERR_CERT_COMMON_NAME_INVALID') ||
-            error.message.includes('ERR_CERT_INVALID') ||
-            error.message.includes('certificate') ||
-            (error.message.includes('Failed to fetch') && activeBaseUrl && activeBaseUrl.startsWith('https'))) {
+        if (error.message.includes('SSL certificate needs to be accepted')) {
           throw new Error('SSL certificate needs to be accepted in browser');
         }
-        if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
-          throw new Error('Network connection failed - backend server may not be running');
+        if (error.message.includes('certificate') || error.message.includes('self-signed') || error.message.includes('NET::ERR_CERT')) {
+          throw new Error('SSL certificate needs to be accepted in browser');
+        }
+        if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError') || error.message.includes('TypeError')) {
+          throw new Error('SSL certificate needs to be accepted in browser');
         }
       }
       throw error;
@@ -112,7 +144,7 @@ class APIService {
     return API_BASE_URLS[0]; // Return the primary HTTPS localhost URL
   }
 
-  async getAllProjects() {
+  async getAllProjects(): Promise<NovelProject[]> {
     try {
       const response = await this.makeRequest('/api/projects');
       return await response.json();
@@ -122,7 +154,7 @@ class APIService {
     }
   }
 
-  async createProject(projectData: any) {
+  async createProject(projectData: Partial<NovelProject>): Promise<NovelProject> {
     try {
       const response = await this.makeRequest('/api/projects', {
         method: 'POST',
@@ -135,7 +167,7 @@ class APIService {
     }
   }
 
-  async updateProject(projectId: string, projectData: any) {
+  async updateProject(projectId: string, projectData: Partial<NovelProject>): Promise<NovelProject> {
     try {
       const response = await this.makeRequest(`/api/projects/${projectId}`, {
         method: 'PUT',
@@ -148,7 +180,7 @@ class APIService {
     }
   }
 
-  async deleteProject(projectId: string) {
+  async deleteProject(projectId: string): Promise<void> {
     try {
       const response = await this.makeRequest(`/api/projects/${projectId}`, {
         method: 'DELETE',
@@ -156,6 +188,66 @@ class APIService {
       return await response.json();
     } catch (error) {
       console.error('Failed to delete project:', error);
+      throw error;
+    }
+  }
+
+  async generatePremise(genre: string, themes?: string): Promise<{ title: string; premise: string }> {
+    try {
+      const response = await this.makeRequest('/api/generate/premise', {
+        method: 'POST',
+        body: JSON.stringify({ genre, themes }),
+      });
+      return await response.json();
+    } catch (error) {
+      console.error('Failed to generate premise:', error);
+      throw error;
+    }
+  }
+
+  async generateOutline(premise: string, genre: string): Promise<string[]> {
+    try {
+      const response = await this.makeRequest('/api/generate/outline', {
+        method: 'POST',
+        body: JSON.stringify({ premise, genre }),
+      });
+      return await response.json();
+    } catch (error) {
+      console.error('Failed to generate outline:', error);
+      throw error;
+    }
+  }
+
+  async startWritingSession(projectId: string): Promise<WritingSession> {
+    try {
+      const response = await this.makeRequest(`/api/projects/${projectId}/writing-session`, {
+        method: 'POST',
+      });
+      return await response.json();
+    } catch (error) {
+      console.error('Failed to start writing session:', error);
+      throw error;
+    }
+  }
+
+  async generateChapterContent(projectId: string, chapterIndex: number): Promise<{ content: string; entities: any }> {
+    try {
+      const response = await this.makeRequest(`/api/projects/${projectId}/chapters/${chapterIndex}/generate`, {
+        method: 'POST',
+      });
+      return await response.json();
+    } catch (error) {
+      console.error('Failed to generate chapter content:', error);
+      throw error;
+    }
+  }
+
+  async exportNovel(projectId: string, format: 'txt' | 'docx' | 'pdf' = 'txt'): Promise<{ content: string; filename: string }> {
+    try {
+      const response = await this.makeRequest(`/api/projects/${projectId}/export?format=${format}`);
+      return await response.json();
+    } catch (error) {
+      console.error('Failed to export novel:', error);
       throw error;
     }
   }
@@ -208,7 +300,6 @@ class APIService {
       throw error;
     }
   }
-
 
   // Get the currently active base URL for display purposes
   getActiveBaseUrl(): string | null {
