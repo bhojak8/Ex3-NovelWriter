@@ -69,9 +69,6 @@ def start_backend():
     
     print("🔧 Starting backend server...")
     
-    # Try to generate SSL certificates
-    key_file, cert_file = generate_ssl_cert()
-    
     # Build uvicorn command
     cmd = [
         sys.executable, "-m", "uvicorn", "app:app",
@@ -80,12 +77,7 @@ def start_backend():
         "--reload"
     ]
     
-    # Add SSL if certificates are available
-    if key_file and cert_file:
-        cmd.extend(["--ssl-keyfile", key_file, "--ssl-certfile", cert_file])
-        print("🔐 Starting with HTTPS support")
-    else:
-        print("⚠️  Starting with HTTP only (SSL certificates not available)")
+    print("🌐 Starting with HTTP for local development")
     
     backend_process = subprocess.Popen(cmd, cwd=backend_dir)
     
@@ -125,10 +117,8 @@ def main():
         
         print("\n✅ Application started successfully!")
         print("📱 Frontend: http://localhost:5173")
-        print("🔧 Backend: https://localhost:8000 (or http://localhost:8000 if SSL unavailable)")
-        print("📚 API Docs: https://localhost:8000/docs")
-        print("\n⚠️  If using HTTPS, you may need to accept the self-signed certificate")
-        print("   Visit https://localhost:8000 in your browser and click 'Advanced' -> 'Proceed to localhost'")
+        print("🔧 Backend: http://localhost:8000")
+        print("📚 API Docs: http://localhost:8000/docs")
         print("\nPress Ctrl+C to stop all servers")
         
         # Wait for processes
