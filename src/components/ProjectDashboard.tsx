@@ -120,7 +120,11 @@ export default function ProjectDashboard({ onCreateNew, onSelectProject }: Proje
   const renderConnectionError = () => {
     if (!loadError) return null;
 
-    const isSSLError = loadError.includes('SSL certificate needs to be accepted');
+    const isSSLError = loadError.includes('SSL certificate needs to be accepted') || 
+                       loadError.includes('certificate') || 
+                       loadError.includes('SSL') || 
+                       loadError.includes('TLS') ||
+                       loadError.includes('ERR_CERT');
     const isTimeoutError = loadError.includes('timeout') || loadError.includes('Request timeout');
     const isNetworkError = loadError.includes('Network connection failed');
     const isConnectionError = loadError.includes('Backend connection failed') && !isSSLError && !isTimeoutError && !isNetworkError;
@@ -135,7 +139,7 @@ export default function ProjectDashboard({ onCreateNew, onSelectProject }: Proje
             {isSSLError && (
               <div className="space-y-4">
                 <p className="text-sm text-red-700">
-                  The backend server is using HTTPS with a self-signed SSL certificate that your browser doesn't trust.
+                  The backend server is using HTTPS with a self-signed SSL certificate. Your browser needs to accept this certificate to establish a secure connection.
                 </p>
                 
                 <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
@@ -146,16 +150,16 @@ export default function ProjectDashboard({ onCreateNew, onSelectProject }: Proje
                   
                   <div className="space-y-3">
                     <p className="text-sm text-amber-700">
-                      To establish a secure connection, you need to accept the self-signed certificate:
+                      <strong>Quick Fix:</strong> Follow these steps to accept the SSL certificate:
                     </p>
                     
                     <ol className="text-sm text-amber-700 space-y-2 list-decimal list-inside ml-4">
                       <li>Click "Open Backend URL" below to open the backend in a new tab</li>
-                      <li>You'll see a security warning - this is normal for self-signed certificates</li>
-                      <li>Click "Advanced" or "Show details" on the warning page</li>
-                      <li>Click "Proceed to localhost (unsafe)" or "Accept the risk and continue"</li>
-                      <li>You should see a JSON response like &lbrace;"status": "healthy"&rbrace;</li>
-                      <li>Return to this tab and click "Retry Connection"</li>
+                      <li><strong>You'll see a security warning</strong> - this is normal for development servers</li>
+                      <li><strong>Click "Advanced"</strong> or "Show details" on the warning page</li>
+                      <li><strong>Click "Proceed to localhost (unsafe)"</strong> or "Accept the risk and continue"</li>
+                      <li><strong>You should see a JSON response</strong> like &lbrace;"status": "healthy"&rbrace;</li>
+                      <li><strong>Return to this tab</strong> and click "Retry Connection" below</li>
                     </ol>
                     
                     <div className="flex space-x-3 mt-4">
@@ -166,7 +170,7 @@ export default function ProjectDashboard({ onCreateNew, onSelectProject }: Proje
                         className="border-amber-300 text-amber-700 hover:bg-amber-100"
                       >
                         <ExternalLink className="h-4 w-4 mr-2" />
-                        Open Backend URL
+                        1. Open Backend URL
                       </Button>
                       
                       <Button 
@@ -180,7 +184,7 @@ export default function ProjectDashboard({ onCreateNew, onSelectProject }: Proje
                         ) : (
                           <RefreshCw className="h-4 w-4 mr-2" />
                         )}
-                        Retry Connection
+                        2. Retry Connection
                       </Button>
                     </div>
                   </div>
@@ -188,8 +192,9 @@ export default function ProjectDashboard({ onCreateNew, onSelectProject }: Proje
                 
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
                   <p className="text-xs text-blue-700">
-                    <strong>Why is this needed?</strong> The backend uses HTTPS for security, but generates its own certificate. 
-                    Browsers require manual approval for self-signed certificates to protect against malicious sites.
+                    <strong>Why is this needed?</strong> The backend uses HTTPS for security but generates its own certificate. 
+                    Browsers require manual approval for self-signed certificates to protect against malicious sites. 
+                    This is a one-time setup step for development.
                   </p>
                 </div>
               </div>

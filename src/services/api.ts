@@ -64,7 +64,14 @@ class APIService {
         if (error.name === 'AbortError') {
           throw new Error(`Connection timeout to ${baseUrl} - server may be overloaded or unreachable`);
         }
-        if (error.message.includes('certificate') || error.message.includes('self-signed') || error.message.includes('NET::ERR_CERT')) {
+        if (error.message.includes('certificate') || 
+            error.message.includes('self-signed') || 
+            error.message.includes('NET::ERR_CERT') ||
+            error.message.includes('ERR_CERT') ||
+            error.message.includes('SSL') ||
+            error.message.includes('TLS') ||
+            error.message.includes('CERT_') ||
+            (baseUrl.startsWith('https://') && error.message.includes('Failed to fetch'))) {
           throw new Error(`SSL certificate error for ${baseUrl} - certificate needs to be accepted in browser`);
         }
         if (error.message.includes('ECONNREFUSED') || error.message.includes('Failed to fetch')) {
@@ -153,7 +160,13 @@ class APIService {
         if (error.message.includes('SSL certificate needs to be accepted')) {
           throw new Error('SSL certificate needs to be accepted in browser');
         }
-        if (error.message.includes('certificate') || error.message.includes('self-signed') || error.message.includes('NET::ERR_CERT')) {
+        if (error.message.includes('certificate') || 
+            error.message.includes('self-signed') || 
+            error.message.includes('NET::ERR_CERT') ||
+            error.message.includes('ERR_CERT') ||
+            error.message.includes('SSL') ||
+            error.message.includes('TLS') ||
+            error.message.includes('CERT_')) {
           throw new Error('SSL certificate needs to be accepted in browser');
         }
       }
@@ -167,14 +180,21 @@ class APIService {
       const result = await response.json();
       return result;
     } catch (error) {
-      // Re-throw with more specific error context
+      // Enhanced error handling for SSL certificate issues
+      if (error instanceof Error && 
+          (error.message.includes('certificate') || 
+           error.message.includes('SSL') || 
+           error.message.includes('TLS') ||
+           error.message.includes('ERR_CERT'))) {
+        throw new Error('SSL certificate needs to be accepted in browser');
+      }
       throw error;
     }
   }
 
   // Method to get the primary backend URL for user instructions
   getPrimaryBackendUrl(): string {
-    return API_BASE_URLS[0]; // Return the primary HTTP localhost URL
+    return 'https://localhost:8000'; // Return the HTTPS URL for SSL certificate acceptance
   }
 
   async getAllProjects(): Promise<NovelProject[]> {
