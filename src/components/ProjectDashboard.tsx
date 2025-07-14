@@ -19,7 +19,7 @@ interface ProjectDashboardProps {
 }
 
 export default function ProjectDashboard({ onCreateNew, onSelectProject }: ProjectDashboardProps) {
-  const { getAllProjects, deleteProject, isLoading, isConnected, llmProvider, checkConnection } = useNovelWriter();
+  const { loadProjects: getAllProjects, deleteProject, isLoading, isConnected, llmProvider, checkConnection } = useNovelWriter();
   const [projects, setProjects] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
