@@ -19,8 +19,20 @@ export default function ConnectionStatus() {
   useEffect(() => {
     // Check connections on mount
     const checkConnections = async () => {
-      await checkConnection();
-      await checkLocalLLMConnection();
+      try {
+        await checkConnection();
+      } catch (error) {
+        // SSL certificate errors are expected on first load, don't log as errors
+        if (error instanceof Error && !error.message.includes('SSL certificate')) {
+          console.error('Connection check failed:', error);
+        }
+      }
+      
+      try {
+        await checkLocalLLMConnection();
+      } catch (error) {
+        console.error('Local LLM connection check failed:', error);
+      }
     };
     checkConnections();
   }, [checkConnection, checkLocalLLMConnection]);

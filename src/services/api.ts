@@ -64,14 +64,38 @@ class APIService {
         if (error.name === 'AbortError') {
           throw new Error(`Connection timeout to ${baseUrl} - server may be overloaded or unreachable`);
         }
-        if (error.message.includes('certificate') || 
-            error.message.includes('self-signed') || 
-            error.message.includes('NET::ERR_CERT') ||
-            error.message.includes('ERR_CERT') ||
-            error.message.includes('SSL') ||
-            error.message.includes('TLS') ||
-            error.message.includes('CERT_') ||
-            (baseUrl.startsWith('https://') && error.message.includes('Failed to fetch'))) {
+        // Enhanced SSL certificate error detection
+        const isSSLError = error.message.includes('certificate') || 
+                          error.message.includes('self-signed') || 
+                          error.message.includes('NET::ERR_CERT') ||
+                          error.message.includes('ERR_CERT') ||
+                          error.message.includes('SSL') ||
+                          error.message.includes('TLS') ||
+                          error.message.includes('CERT_') ||
+                          error.message.includes('ERR_SSL') ||
+                          error.message.includes('ERR_TLS') ||
+                          error.message.includes('CERTIFICATE_') ||
+                          error.message.includes('SEC_ERROR_') ||
+                          error.message.includes('SSL_ERROR_') ||
+                          (baseUrl.startsWith('https://') && (
+                            error.message.includes('Failed to fetch') ||
+                            error.message.includes('NetworkError') ||
+                            error.message.includes('TypeError')
+                          ));
+        
+        if (isSSLError) {
+                          error.message.includes('ERR_SSL') ||
+                          error.message.includes('ERR_TLS') ||
+                          error.message.includes('CERTIFICATE_') ||
+                          error.message.includes('SEC_ERROR_') ||
+                          error.message.includes('SSL_ERROR_') ||
+                          (baseUrl.startsWith('https://') && (
+                            error.message.includes('Failed to fetch') ||
+                            error.message.includes('NetworkError') ||
+                            error.message.includes('TypeError')
+                          ));
+        
+        if (isSSLError) {
           throw new Error(`SSL certificate error for ${baseUrl} - certificate needs to be accepted in browser`);
         }
         if (error.message.includes('ECONNREFUSED') || error.message.includes('Failed to fetch')) {

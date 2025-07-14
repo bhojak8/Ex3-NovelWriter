@@ -38,7 +38,7 @@ export default function ProjectDashboard({ onCreateNew, onSelectProject }: Proje
       setLoadError(null);
       const allProjects = await getAllProjects();
       setProjects(allProjects);
-      setSslCertificateAccepted(true); // If we get here, SSL is working
+      setSslCertificateAccepted(true);
     } catch (err) {
       console.error('Failed to load projects:', err);
       const errorMessage = err instanceof Error ? err.message : 'Failed to load projects';
@@ -61,16 +61,20 @@ export default function ProjectDashboard({ onCreateNew, onSelectProject }: Proje
       await checkConnection();
       await loadProjects();
     } catch (err) {
-      console.error('Retry failed:', err);
-      const errorMessage = err instanceof Error ? err.message : 'Connection retry failed';
-      setLoadError(errorMessage);
+      if (err instanceof Error) {
+        console.error('Retry failed:', err);
+        setLoadError(err.message);
+      } else {
+        console.error('Retry failed with unknown error:', err);
+        setLoadError('Connection retry failed');
+      }
     } finally {
       setIsRetrying(false);
     }
   };
 
   const openBackendURL = () => {
-    const backendURL = apiService.getPrimaryBackendUrl();
+    const backendURL = `${apiService.getPrimaryBackendUrl()}/health`;
     window.open(backendURL, '_blank');
   };
 
