@@ -84,30 +84,6 @@ class APIService {
                           ));
         
         if (isSSLError) {
-                          error.message.includes('ERR_SSL') ||
-                          error.message.includes('ERR_TLS') ||
-                          error.message.includes('CERTIFICATE_') ||
-                          error.message.includes('SEC_ERROR_') ||
-                          error.message.includes('SSL_ERROR_') ||
-                          (baseUrl.startsWith('https://') && (
-                            error.message.includes('Failed to fetch') ||
-                            error.message.includes('NetworkError') ||
-                            error.message.includes('TypeError')
-                          ));
-        
-        if (isSSLError) {
-                          error.message.includes('ERR_SSL') ||
-                          error.message.includes('ERR_TLS') ||
-                          error.message.includes('CERTIFICATE_') ||
-                          error.message.includes('SEC_ERROR_') ||
-                          error.message.includes('SSL_ERROR_') ||
-                          (baseUrl.startsWith('https://') && (
-                            error.message.includes('Failed to fetch') ||
-                            error.message.includes('NetworkError') ||
-                            error.message.includes('TypeError')
-                          ));
-        
-        if (isSSLError) {
           throw new Error(`SSL certificate error for ${baseUrl} - certificate needs to be accepted in browser`);
         }
         if (error.message.includes('ECONNREFUSED') || error.message.includes('Failed to fetch')) {
