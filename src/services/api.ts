@@ -261,7 +261,7 @@ class APIService {
     try {
       const response = await this.makeRequest('/api/generate/premise', {
         method: 'POST',
-        body: JSON.stringify({ genre, themes }),
+        body: JSON.stringify({ genre, themes, model_name: arguments[2] }),
       });
       return await response.json();
     } catch (error) {
@@ -270,11 +270,11 @@ class APIService {
     }
   }
 
-  async generateOutline(premise: string, genre: string): Promise<string[]> {
+  async generateOutline(premise: string, genre: string, modelName?: string): Promise<string[]> {
     try {
       const response = await this.makeRequest('/api/generate/outline', {
         method: 'POST',
-        body: JSON.stringify({ premise, genre }),
+        body: JSON.stringify({ premise, genre, model_name: modelName }),
       });
       return await response.json();
     } catch (error) {
@@ -295,10 +295,11 @@ class APIService {
     }
   }
 
-  async generateChapterContent(projectId: string, chapterIndex: number): Promise<{ content: string; entities: any }> {
+  async generateChapterContent(projectId: string, chapterIndex: number, modelName?: string): Promise<{ content: string; entities: any }> {
     try {
-      const response = await this.makeRequest(`/api/projects/${projectId}/chapters/${chapterIndex}/generate`, {
+      const response = await this.makeRequest('/api/writing/generate-chapter', {
         method: 'POST',
+        body: JSON.stringify({ project_id: projectId, chapter_index: chapterIndex, model_name: modelName }),
       });
       return await response.json();
     } catch (error) {

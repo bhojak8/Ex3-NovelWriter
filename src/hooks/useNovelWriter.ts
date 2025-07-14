@@ -1,383 +1,243 @@
-const API_BASE_URLS = [
-  'http://localhost:8000',
-  'http://127.0.0.1:8000',
-  'https://localhost:8000',
-  'https://127.0.0.1:8000'
-];
+import { useState, useCallback } from 'react';
+import { apiService, NovelProject, WritingSession } from '../services/api';
+import { localLLMService } from '../services/localLLM';
 
-let activeBaseUrl: string | null = null;
-
-export interface NovelProject {
-  id: string;
-  title: string;
-  genre: string;
-  premise: string;
-  outline: string[];
-  chapters: Chapter[];
-  status: 'planning' | 'writing' | 'completed' | 'paused';
-  progress: number;
-  writingStyle: string;
-  targetLength: 'short' | 'medium' | 'long';
-  themes?: string;
-  createdAt: string;
-  modifiedAt: string;
-  wordCount: number;
+export interface UseNovelWriterState {
+  currentProject: NovelProject | null;
+  projects: NovelProject[];
+  writingSession: WritingSession | null;
+  llmProvider: 'api' | 'local';
+  isLoading: boolean;
+  error: string | null;
+  connectionStatus: 'connected' | 'disconnected' | 'checking';
 }
 
-export interface Chapter {
-  id: number;
-  title: string;
-  content: string;
-  summary: string;
-  entities: any;
-  wordCount: number;
+export interface UseNovelWriterActions {
+  setCurrentProject: (project: NovelProject | null) => void;
+  setProjects: (projects: NovelProject[]) => void;
+  setWritingSession: (session: WritingSession | null) => void;
+  setLLMProvider: (provider: 'api' | 'local') => void;
+  setIsLoading: (loading: boolean) => void;
+  setError: (error: string | null) => void;
+  setConnectionStatus: (status: 'connected' | 'disconnected' | 'checking') => void;
+  loadProjects: () => Promise<void>;
+  createProject: (projectData: Partial<NovelProject>) => Promise<NovelProject>;
+  updateProject: (projectId: string, projectData: Partial<NovelProject>) => Promise<NovelProject>;
+  deleteProject: (projectId: string) => Promise<void>;
+  generatePremise: (genre: string, themes?: string, modelName?: string) => Promise<{ title: string; premise: string }>;
+  generateOutline: (premise: string, genre: string, modelName?: string) => Promise<string[]>;
+  startWritingSession: (projectId: string) => Promise<WritingSession>;
+  generateChapterContent: (projectId: string, chapterIndex: number, modelName?: string) => Promise<{ content: string; entities: any }>;
+  exportNovel: (projectId: string, format?: 'txt' | 'docx' | 'pdf') => Promise<{ content: string; filename: string }>;
+  checkHealth: () => Promise<any>;
 }
 
-export interface WritingSession {
-  id: string;
-  projectId: string;
-  currentChapter: number;
-  isActive: boolean;
-  generatedContent: string;
-  entityDatabase: any;
-}
+export function useNovelWriter(): UseNovelWriterState & UseNovelWriterActions {
+  const [currentProject, setCurrentProject] = useState<NovelProject | null>(null);
+  const [projects, setProjects] = useState<NovelProject[]>([]);
+  const [writingSession, setWritingSession] = useState<WritingSession | null>(null);
+  const [llmProvider, setLLMProvider] = useState<'api' | 'local'>('api');
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [connectionStatus, setConnectionStatus] = useState<'connected' | 'disconnected' | 'checking'>('disconnected');
 
-class APIService {
-  private async testConnection(baseUrl: string): Promise<boolean> {
+  const getService = useCallback(() => {
+    return llmProvider === 'local' ? localLLMService : apiService;
+  }, [llmProvider]);
+
+  const loadProjects = useCallback(async () => {
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000);
-      
-      const response = await fetch(`${baseUrl}/health`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        signal: controller.signal,
-      });
-      
-      clearTimeout(timeoutId);
-      return response.ok;
-    } catch (error) {
-      // Re-throw specific errors for better error handling upstream
-      if (error instanceof Error) {
-        if (error.name === 'AbortError') {
-          throw new Error(`Connection timeout to ${baseUrl} - server may be overloaded or unreachable`);
-        }
-        // Enhanced SSL certificate error detection
-        const isSSLError = error.message.includes('certificate') || 
-                          error.message.includes('self-signed') || 
-                          error.message.includes('NET::ERR_CERT') ||
-                          error.message.includes('ERR_CERT') ||
-                          error.message.includes('SSL') ||
-                          error.message.includes('TLS') ||
-                          error.message.includes('CERT_') ||
-                          error.message.includes('ERR_SSL') ||
-                          error.message.includes('ERR_TLS') ||
-                          error.message.includes('CERTIFICATE_') ||
-                          error.message.includes('SEC_ERROR_') ||
-                          error.message.includes('SSL_ERROR_') ||
-                          (baseUrl.startsWith('https://') && (
-                            error.message.includes('Failed to fetch') ||
-                            error.message.includes('NetworkError') ||
-                            error.message.includes('TypeError')
-                          ));
-        
-        if (isSSLError) {
-          throw new Error(`SSL certificate error for ${baseUrl} - certificate needs to be accepted in browser`);
-        }
-        if (error.message.includes('ECONNREFUSED') || error.message.includes('Failed to fetch')) {
-          throw new Error(`Connection refused to ${baseUrl} - server may not be running`);
-        }
-        if (error.message.includes('NetworkError') || error.message.includes('network')) {
-          throw new Error(`Network error connecting to ${baseUrl} - check your internet connection`);
-        }
-      }
-      return false;
+      setIsLoading(true);
+      setError(null);
+      const service = getService();
+      const loadedProjects = await service.getAllProjects();
+      setProjects(loadedProjects);
+      setConnectionStatus('connected');
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to load projects';
+      setError(errorMessage);
+      setConnectionStatus('disconnected');
+      throw err;
+    } finally {
+      setIsLoading(false);
     }
-  }
+  }, [getService]);
 
-  private async findWorkingBaseUrl(): Promise<string> {
-    if (activeBaseUrl) {
-      // Test if the active URL still works
-      try {
-        if (await this.testConnection(activeBaseUrl)) {
-          return activeBaseUrl;
-        }
-      } catch (error) {
-        // If there's a specific error, propagate it
-        if (error instanceof Error && !error.message.includes('Connection refused')) {
-          throw error;
-        }
-      }
-      // Reset if it doesn't work anymore
-      activeBaseUrl = null;
-    }
-
-    let lastSpecificError: Error | null = null;
-    
-    for (const baseUrl of API_BASE_URLS) {
-      try {
-        if (await this.testConnection(baseUrl)) {
-          activeBaseUrl = baseUrl;
-          return baseUrl;
-        }
-      } catch (error) {
-        // Store specific errors (not connection refused) to potentially throw later
-        if (error instanceof Error && !error.message.includes('Connection refused')) {
-          lastSpecificError = error;
-        }
-      }
-    }
-
-    // If we have a specific error (like SSL or timeout), throw that instead of generic message
-    if (lastSpecificError) {
-      throw lastSpecificError;
-    }
-
-    // If no URL works, throw a detailed error
-    throw new Error(
-      `Backend server is not reachable on any configured port (${API_BASE_URLS.join(', ')}). Please ensure the backend server is running. If using HTTPS, you may need to accept the SSL certificate by visiting ${this.getPrimaryBackendUrl()}/health directly in your browser.`
-    );
-  }
-
-  private async makeRequest(endpoint: string, options: RequestInit = {}): Promise<Response> {
+  const createProject = useCallback(async (projectData: Partial<NovelProject>) => {
     try {
-      const baseUrl = await this.findWorkingBaseUrl();
-      
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
-      
-      const response = await fetch(`${baseUrl}${endpoint}`, {
-        ...options,
-        headers: {
-          'Content-Type': 'application/json',
-          ...options.headers,
-        },
-        signal: controller.signal,
-      });
-
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      return response;
-    } catch (error) {
-      if (error instanceof Error) {
-        if (error.name === 'AbortError') {
-          throw new Error('Request timeout - backend server may be overloaded or unreachable');
-        }
-        
-        // Enhanced SSL certificate error detection for requests
-        const isSSLError = error.message.includes('SSL certificate needs to be accepted') ||
-                          error.message.includes('certificate') || 
-                          error.message.includes('self-signed') || 
-                          error.message.includes('NET::ERR_CERT') ||
-                          error.message.includes('ERR_CERT') ||
-                          error.message.includes('SSL') ||
-                          error.message.includes('TLS') ||
-                          error.message.includes('CERT_') ||
-                          error.message.includes('ERR_SSL') ||
-                          error.message.includes('ERR_TLS') ||
-                          error.message.includes('CERTIFICATE_') ||
-                          error.message.includes('SEC_ERROR_') ||
-                          error.message.includes('SSL_ERROR_');
-        
-        if (isSSLError) {
-          throw new Error('SSL certificate needs to be accepted in browser');
-        }
-      }
-      throw error;
+      setIsLoading(true);
+      setError(null);
+      const service = getService();
+      const newProject = await service.createProject(projectData);
+      setProjects(prev => [...prev, newProject]);
+      return newProject;
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to create project';
+      setError(errorMessage);
+      throw err;
+    } finally {
+      setIsLoading(false);
     }
-  }
+  }, [getService]);
 
-  async checkHealth() {
+  const updateProject = useCallback(async (projectId: string, projectData: Partial<NovelProject>) => {
     try {
-      const response = await this.makeRequest('/health');
-      const result = await response.json();
+      setIsLoading(true);
+      setError(null);
+      const service = getService();
+      const updatedProject = await service.updateProject(projectId, projectData);
+      setProjects(prev => prev.map(p => p.id === projectId ? updatedProject : p));
+      if (currentProject?.id === projectId) {
+        setCurrentProject(updatedProject);
+      }
+      return updatedProject;
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to update project';
+      setError(errorMessage);
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [getService, currentProject]);
+
+  const deleteProject = useCallback(async (projectId: string) => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      const service = getService();
+      await service.deleteProject(projectId);
+      setProjects(prev => prev.filter(p => p.id !== projectId));
+      if (currentProject?.id === projectId) {
+        setCurrentProject(null);
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to delete project';
+      setError(errorMessage);
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [getService, currentProject]);
+
+  const generatePremise = useCallback(async (genre: string, themes?: string, modelName?: string) => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      const service = getService();
+      return await service.generatePremise(genre, themes, modelName);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to generate premise';
+      setError(errorMessage);
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [getService]);
+
+  const generateOutline = useCallback(async (premise: string, genre: string, modelName?: string) => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      const service = getService();
+      return await service.generateOutline(premise, genre, modelName);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to generate outline';
+      setError(errorMessage);
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [getService]);
+
+  const startWritingSession = useCallback(async (projectId: string) => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      const service = getService();
+      const session = await service.startWritingSession(projectId);
+      setWritingSession(session);
+      return session;
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to start writing session';
+      setError(errorMessage);
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [getService]);
+
+  const generateChapterContent = useCallback(async (projectId: string, chapterIndex: number, modelName?: string) => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      const service = getService();
+      return await service.generateChapterContent(projectId, chapterIndex, modelName);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to generate chapter content';
+      setError(errorMessage);
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [getService]);
+
+  const exportNovel = useCallback(async (projectId: string, format: 'txt' | 'docx' | 'pdf' = 'txt') => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      const service = getService();
+      return await service.exportNovel(projectId, format);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to export novel';
+      setError(errorMessage);
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [getService]);
+
+  const checkHealth = useCallback(async () => {
+    try {
+      setConnectionStatus('checking');
+      setError(null);
+      const service = getService();
+      const result = await service.checkHealth();
+      setConnectionStatus('connected');
       return result;
-    } catch (error) {
-      // Enhanced error handling for SSL certificate issues
-      if (error instanceof Error && 
-          (error.message.includes('certificate') || 
-           error.message.includes('SSL') || 
-           error.message.includes('TLS') ||
-           error.message.includes('ERR_CERT'))) {
-        throw new Error('SSL certificate needs to be accepted in browser');
-      }
-      throw error;
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Health check failed';
+      setError(errorMessage);
+      setConnectionStatus('disconnected');
+      throw err;
     }
-  }
+  }, [getService]);
 
-  // Method to get the primary backend URL for user instructions
-  getPrimaryBackendUrl(): string {
-    return 'https://localhost:8000'; // Return the HTTPS URL for SSL certificate acceptance
-  }
-
-  async getAllProjects(): Promise<NovelProject[]> {
-    try {
-      const response = await this.makeRequest('/api/projects');
-      return await response.json();
-    } catch (error) {
-      console.error('Failed to get all projects:', error);
-      throw error;
-    }
-  }
-
-  async createProject(projectData: Partial<NovelProject>): Promise<NovelProject> {
-    try {
-      const response = await this.makeRequest('/api/projects', {
-        method: 'POST',
-        body: JSON.stringify(projectData),
-      });
-      return await response.json();
-    } catch (error) {
-      console.error('Failed to create project:', error);
-      throw error;
-    }
-  }
-
-  async updateProject(projectId: string, projectData: Partial<NovelProject>): Promise<NovelProject> {
-    try {
-      const response = await this.makeRequest(`/api/projects/${projectId}`, {
-        method: 'PUT',
-        body: JSON.stringify(projectData),
-      });
-      return await response.json();
-    } catch (error) {
-      console.error('Failed to update project:', error);
-      throw error;
-    }
-  }
-
-  async deleteProject(projectId: string): Promise<void> {
-    try {
-      const response = await this.makeRequest(`/api/projects/${projectId}`, {
-        method: 'DELETE',
-      });
-      return await response.json();
-    } catch (error) {
-      console.error('Failed to delete project:', error);
-      throw error;
-    }
-  }
-
-  async generatePremise(genre: string, themes?: string): Promise<{ title: string; premise: string }> {
-    try {
-      const response = await this.makeRequest('/api/generate/premise', {
-        method: 'POST',
-        body: JSON.stringify({ genre, themes }),
-      });
-      return await response.json();
-    } catch (error) {
-      console.error('Failed to generate premise:', error);
-      throw error;
-    }
-  }
-
-  async generateOutline(premise: string, genre: string): Promise<string[]> {
-    try {
-      const response = await this.makeRequest('/api/generate/outline', {
-        method: 'POST',
-        body: JSON.stringify({ premise, genre }),
-      });
-      return await response.json();
-    } catch (error) {
-      console.error('Failed to generate outline:', error);
-      throw error;
-    }
-  }
-
-  async startWritingSession(projectId: string): Promise<WritingSession> {
-    try {
-      const response = await this.makeRequest(`/api/projects/${projectId}/writing-session`, {
-        method: 'POST',
-      });
-      return await response.json();
-    } catch (error) {
-      console.error('Failed to start writing session:', error);
-      throw error;
-    }
-  }
-
-  async generateChapterContent(projectId: string, chapterIndex: number): Promise<{ content: string; entities: any }> {
-    try {
-      const response = await this.makeRequest(`/api/projects/${projectId}/chapters/${chapterIndex}/generate`, {
-        method: 'POST',
-      });
-      return await response.json();
-    } catch (error) {
-      console.error('Failed to generate chapter content:', error);
-      throw error;
-    }
-  }
-
-  async exportNovel(projectId: string, format: 'txt' | 'docx' | 'pdf' = 'txt'): Promise<{ content: string; filename: string }> {
-    try {
-      const response = await this.makeRequest(`/api/projects/${projectId}/export?format=${format}`);
-      return await response.json();
-    } catch (error) {
-      console.error('Failed to export novel:', error);
-      throw error;
-    }
-  }
-
-  async generateContent(prompt: string, options: any = {}) {
-    try {
-      const response = await this.makeRequest('/api/generate', {
-        method: 'POST',
-        body: JSON.stringify({ prompt, ...options }),
-      });
-      return await response.json();
-    } catch (error) {
-      console.error('Failed to generate content:', error);
-      throw error;
-    }
-  }
-
-  async getModels() {
-    try {
-      const response = await this.makeRequest('/api/models');
-      return await response.json();
-    } catch (error) {
-      console.error('Failed to get models:', error);
-      throw error;
-    }
-  }
-
-  async testModel(modelConfig: any) {
-    try {
-      const response = await this.makeRequest('/api/models/test', {
-        method: 'POST',
-        body: JSON.stringify(modelConfig),
-      });
-      return await response.json();
-    } catch (error) {
-      console.error('Failed to test model:', error);
-      throw error;
-    }
-  }
-
-  async saveModel(modelConfig: any) {
-    try {
-      const response = await this.makeRequest('/api/models', {
-        method: 'POST',
-        body: JSON.stringify(modelConfig),
-      });
-      return await response.json();
-    } catch (error) {
-      console.error('Failed to save model:', error);
-      throw error;
-    }
-  }
-
-  // Get the currently active base URL for display purposes
-  getActiveBaseUrl(): string | null {
-    return activeBaseUrl;
-  }
+  return {
+    // State
+    currentProject,
+    projects,
+    writingSession,
+    llmProvider,
+    isLoading,
+    error,
+    connectionStatus,
+    // Actions
+    setCurrentProject,
+    setProjects,
+    setWritingSession,
+    setLLMProvider,
+    setIsLoading,
+    setError,
+    setConnectionStatus,
+    loadProjects,
+    createProject,
+    updateProject,
+    deleteProject,
+    generatePremise,
+    generateOutline,
+    startWritingSession,
+    generateChapterContent,
+    exportNovel,
+    checkHealth,
+  };
 }
-
-export const apiService = new APIService();
-export default apiService;
