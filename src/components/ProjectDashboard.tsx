@@ -27,18 +27,16 @@ export default function ProjectDashboard({ onCreateNew, onSelectProject }: Proje
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isRetrying, setIsRetrying] = useState(false);
-  const [sslCertificateAccepted, setSslCertificateAccepted] = useState(false);
 
   useEffect(() => {
     loadProjects();
   }, []);
 
-  const loadProjects = async () => {
+  const loadProjectsData = async () => {
     try {
       setLoadError(null);
-      const allProjects = await getAllProjects();
+      const allProjects = await loadProjects();
       setProjects(allProjects);
-      setSslCertificateAccepted(true); // If we get here, SSL is working
     } catch (err) {
       console.error('Failed to load projects:', err);
       const errorMessage = err instanceof Error ? err.message : 'Failed to load projects';
@@ -54,12 +52,13 @@ export default function ProjectDashboard({ onCreateNew, onSelectProject }: Proje
     }
   };
 
+  const loadProjects = loadProjectsData;
   const handleRetryConnection = async () => {
     setIsRetrying(true);
     try {
       setLoadError(null);
       await checkConnection();
-      await loadProjects();
+      await loadProjectsData();
     } catch (err) {
       console.error('Retry failed:', err);
       const errorMessage = err instanceof Error ? err.message : 'Connection retry failed';
@@ -74,10 +73,6 @@ export default function ProjectDashboard({ onCreateNew, onSelectProject }: Proje
     window.open(backendURL, '_blank');
   };
 
-  const handleCertificateAccepted = () => {
-    setSslCertificateAccepted(true);
-    handleRetryConnection();
-  };
 
   const filteredProjects = projects
     .filter(project => {

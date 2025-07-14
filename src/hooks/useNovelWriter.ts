@@ -6,9 +6,11 @@ export interface UseNovelWriterState {
   currentProject: NovelProject | null;
   projects: NovelProject[];
   writingSession: WritingSession | null;
-  llmProvider: 'api' | 'local';
+  llmProvider: 'ex3-api' | 'local-llm';
   isLoading: boolean;
   error: string | null;
+  isConnected: boolean;
+  isLocalLLMConnected: boolean;
   connectionStatus: 'connected' | 'disconnected' | 'checking';
 }
 
@@ -16,11 +18,13 @@ export interface UseNovelWriterActions {
   setCurrentProject: (project: NovelProject | null) => void;
   setProjects: (projects: NovelProject[]) => void;
   setWritingSession: (session: WritingSession | null) => void;
-  setLLMProvider: (provider: 'api' | 'local') => void;
+  setLLMProvider: (provider: 'ex3-api' | 'local-llm') => void;
   setIsLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
+  setIsConnected: (connected: boolean) => void;
+  setIsLocalLLMConnected: (connected: boolean) => void;
   setConnectionStatus: (status: 'connected' | 'disconnected' | 'checking') => void;
-  loadProjects: () => Promise<void>;
+  loadProjects: () => Promise<NovelProject[]>;
   createProject: (projectData: Partial<NovelProject>) => Promise<NovelProject>;
   updateProject: (projectId: string, projectData: Partial<NovelProject>) => Promise<NovelProject>;
   deleteProject: (projectId: string) => Promise<void>;
@@ -29,39 +33,51 @@ export interface UseNovelWriterActions {
   startWritingSession: (projectId: string) => Promise<WritingSession>;
   generateChapterContent: (projectId: string, chapterIndex: number, modelName?: string) => Promise<{ content: string; entities: any }>;
   exportNovel: (projectId: string, format?: 'txt' | 'docx' | 'pdf') => Promise<{ content: string; filename: string }>;
-  checkHealth: () => Promise<any>;
+  checkConnection: () => Promise<any>;
+  checkLocalLLMConnection: () => Promise<any>;
 }
 
 export function useNovelWriter(): UseNovelWriterState & UseNovelWriterActions {
   const [currentProject, setCurrentProject] = useState<NovelProject | null>(null);
   const [projects, setProjects] = useState<NovelProject[]>([]);
   const [writingSession, setWritingSession] = useState<WritingSession | null>(null);
-  const [llmProvider, setLLMProvider] = useState<'api' | 'local'>('api');
+  const [llmProvider, setLLMProvider] = useState<'ex3-api' | 'local-llm'>('ex3-api');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isConnected, setIsConnected] = useState(false);
+  const [isLocalLLMConnected, setIsLocalLLMConnected] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'connected' | 'disconnected' | 'checking'>('disconnected');
 
   const getService = useCallback(() => {
-    return llmProvider === 'local' ? localLLMService : apiService;
+    return llmProvider === 'local-llm' ? localLLMService : apiService;
   }, [llmProvider]);
 
-  const loadProjects = useCallback(async () => {
+  const loadProjects = useCallback(async (): Promise<NovelProject[]> => {
     try {
       setIsLoading(true);
       setError(null);
       const service = getService();
       const loadedProjects = await service.getAllProjects();
       setProjects(loadedProjects);
-      setConnectionStatus('connected');
+      if (llmProvider === 'ex3-api') {
+        setIsConnected(true);
+      } else {
+        setIsLocalLLMConnected(true);
+      }
+      return loadedProjects;
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to load projects';
       setError(errorMessage);
-      setConnectionStatus('disconnected');
+      if (llmProvider === 'ex3-api') {
+        setIsConnected(false);
+      } else {
+        setIsLocalLLMConnected(false);
+      }
       throw err;
     } finally {
       setIsLoading(false);
     }
-  }, [getService]);
+  }, [getService, llmProvider]);
 
   const createProject = useCallback(async (projectData: Partial<NovelProject>) => {
     try {
@@ -196,21 +212,36 @@ export function useNovelWriter(): UseNovelWriterState & UseNovelWriterActions {
     }
   }, [getService]);
 
-  const checkHealth = useCallback(async () => {
+  const checkConnection = useCallback(async () => {
     try {
       setConnectionStatus('checking');
       setError(null);
-      const service = getService();
-      const result = await service.checkHealth();
+      const result = await apiService.checkHealth();
+      setIsConnected(true);
       setConnectionStatus('connected');
       return result;
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Health check failed';
+      const errorMessage = err instanceof Error ? err.message : 'API connection failed';
       setError(errorMessage);
+      setIsConnected(false);
       setConnectionStatus('disconnected');
       throw err;
     }
-  }, [getService]);
+  }, []);
+
+  const checkLocalLLMConnection = useCallback(async () => {
+    try {
+      setError(null);
+      const result = await localLLMService.checkHealth();
+      setIsLocalLLMConnected(true);
+      return result;
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Local LLM connection failed';
+      setError(errorMessage);
+      setIsLocalLLMConnected(false);
+      throw err;
+    }
+  }, []);
 
   return {
     // State
@@ -220,6 +251,8 @@ export function useNovelWriter(): UseNovelWriterState & UseNovelWriterActions {
     llmProvider,
     isLoading,
     error,
+    isConnected,
+    isLocalLLMConnected,
     connectionStatus,
     // Actions
     setCurrentProject,
@@ -228,6 +261,8 @@ export function useNovelWriter(): UseNovelWriterState & UseNovelWriterActions {
     setLLMProvider,
     setIsLoading,
     setError,
+    setIsConnected,
+    setIsLocalLLMConnected,
     setConnectionStatus,
     loadProjects,
     createProject,
@@ -238,6 +273,7 @@ export function useNovelWriter(): UseNovelWriterState & UseNovelWriterActions {
     startWritingSession,
     generateChapterContent,
     exportNovel,
-    checkHealth,
+    checkConnection,
+    checkLocalLLMConnection,
   };
 }
