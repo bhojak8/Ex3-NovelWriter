@@ -38,7 +38,7 @@ export default function ProjectDashboard({ onCreateNew, onSelectProject }: Proje
       setLoadError(null);
       const allProjects = await getAllProjects();
       setProjects(allProjects);
-      setSslCertificateAccepted(true);
+      setSslCertificateAccepted(true); // If we get here, SSL is working
     } catch (err) {
       console.error('Failed to load projects:', err);
       const errorMessage = err instanceof Error ? err.message : 'Failed to load projects';
@@ -61,20 +61,16 @@ export default function ProjectDashboard({ onCreateNew, onSelectProject }: Proje
       await checkConnection();
       await loadProjects();
     } catch (err) {
-      if (err instanceof Error) {
-        console.error('Retry failed:', err);
-        setLoadError(err.message);
-      } else {
-        console.error('Retry failed with unknown error:', err);
-        setLoadError('Connection retry failed');
-      }
+      console.error('Retry failed:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Connection retry failed';
+      setLoadError(errorMessage);
     } finally {
       setIsRetrying(false);
     }
   };
 
   const openBackendURL = () => {
-    const backendURL = `${apiService.getPrimaryBackendUrl()}/health`;
+    const backendURL = apiService.getPrimaryBackendUrl();
     window.open(backendURL, '_blank');
   };
 
@@ -128,7 +124,12 @@ export default function ProjectDashboard({ onCreateNew, onSelectProject }: Proje
                        loadError.includes('certificate') || 
                        loadError.includes('SSL') || 
                        loadError.includes('TLS') ||
-                       loadError.includes('ERR_CERT');
+                       loadError.includes('ERR_CERT') ||
+                       loadError.includes('ERR_SSL') ||
+                       loadError.includes('ERR_TLS') ||
+                       loadError.includes('CERTIFICATE_') ||
+                       loadError.includes('SEC_ERROR_') ||
+                       loadError.includes('SSL_ERROR_');
     const isTimeoutError = loadError.includes('timeout') || loadError.includes('Request timeout');
     const isNetworkError = loadError.includes('Network connection failed');
     const isConnectionError = loadError.includes('Backend connection failed') && !isSSLError && !isTimeoutError && !isNetworkError;
