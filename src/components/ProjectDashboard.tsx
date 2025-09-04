@@ -20,7 +20,7 @@ interface ProjectDashboardProps {
 
 export default function ProjectDashboard({ onCreateNew, onSelectProject }: ProjectDashboardProps) {
   const { loadProjects: getAllProjects, deleteProject, isLoading, isConnected, llmProvider, checkConnection } = useNovelWriter();
-  const [projects, setProjects] = useState([]);
+  const [projects, setProjects] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [sortBy, setSortBy] = useState('modified');
@@ -29,13 +29,13 @@ export default function ProjectDashboard({ onCreateNew, onSelectProject }: Proje
   const [isRetrying, setIsRetrying] = useState(false);
 
   useEffect(() => {
-    loadProjects();
+    loadProjectsData();
   }, []);
 
   const loadProjectsData = async () => {
     try {
       setLoadError(null);
-      const allProjects = await loadProjects();
+      const allProjects = await getAllProjects();
       setProjects(allProjects);
     } catch (err) {
       console.error('Failed to load projects:', err);
@@ -52,7 +52,6 @@ export default function ProjectDashboard({ onCreateNew, onSelectProject }: Proje
     }
   };
 
-  const loadProjects = loadProjectsData;
   const handleRetryConnection = async () => {
     setIsRetrying(true);
     try {
